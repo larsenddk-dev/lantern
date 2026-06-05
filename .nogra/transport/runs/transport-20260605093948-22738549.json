@@ -1,0 +1,76 @@
+{
+  "schema": "nogra.transport.run.v1",
+  "releaseVersion": "v1.0.0",
+  "runId": "transport-20260605093948-22738549",
+  "createdAt": "2026-06-05T09:39:48.844Z",
+  "updatedAt": "2026-06-05T09:55:49.560Z",
+  "status": "ok",
+  "phase": "returned",
+  "target": "executor",
+  "targetRole": "executor",
+  "targetModel": "anthropic:sonnet",
+  "executionRole": "nogra:executor",
+  "executionRuntime": "anthropic:sonnet",
+  "executionEffort": "medium",
+  "executionContext": "default",
+  "executionMaxTurns": null,
+  "executionRuntimePolicyProfile": "default",
+  "executionRuntimeSource": "release default",
+  "executionLabel": "Executor · Sonnet · Ok",
+  "briefId": "brief-lantern-v0.1-phase-1-foundation-scaffold-nav-shell-single-provider-strea-2026-06-05-587ac5",
+  "metadata": {
+    "mode": "local",
+    "receiptType": "localDispatchReceipt",
+    "targetRole": "executor",
+    "targetModel": "anthropic:sonnet",
+    "scopeFiles": [
+      "apps/web/ (NEW — Next.js App Router + TypeScript, Tailwind, shadcn/ui, nav shell, chat UI, stub pages)",
+      "apps/api/ (NEW — FastAPI app: health, streaming chat endpoint, OpenAI-compatible client, session persistence, stub-provider test)",
+      ".env.example (NEW — provider/base-url/model/key config)",
+      "README.md (EDIT — local run instructions for web + api)",
+      ".nogra/state/SESSION-CHECKPOINT.md (EDIT — mark phase 1 done, name next phase)",
+      ".nogra/state/CURRENT-TASKS.md (EDIT — move foundation to done, queue multi-provider + modules)"
+    ],
+    "successCriteria": [
+      "The Next.js web app builds and dev-serves, and the FastAPI backend starts with /health returning an ok response.",
+      "The web app shows a persistent nav with all six areas; navigating to each renders its route, and Documents/Notes/Tasks/Memory/Settings render labeled stub pages.",
+      "Sending a message in Chat streams the assistant reply incrementally (chunk-by-chunk), not as a single blob.",
+      "Chat sessions persist: a new session can be created, prior sessions are listed and can be reopened, and message history reloads from the backend.",
+      "The streaming + session round-trip is covered by an automated test that passes against a stub provider with no network or secret dependency.",
+      ".env.example documents how to point the OpenAI-compatible layer at a provider, and README documents how to run web + api locally.",
+      ".nogra/state/SESSION-CHECKPOINT.md and CURRENT-TASKS.md are updated to mark the foundation phase done and name the next phase."
+    ],
+    "stopCriteria": [
+      "First action: read CLAUDE.md, README.md, and .nogra/state/*; then check the toolchain — run `node --version`, a JS package manager (`pnpm --version` or `npm --version`), and `python3 --version`. If Node, a JS package manager, or Python 3 is missing, status: blocked, name what is missing, and do not install runtimes or scaffold partial files.",
+      "Do not add real API keys or secrets to the repo and do not call live external AI providers, including in tests — use a stub/fake endpoint for the streaming test.",
+      "If delivering working chat would require going outside this foundation slice (multi-provider UI, real module features, auth, deployment), stop and return for a follow-up brief instead of expanding scope.",
+      "If a scaffolding command exits non-zero and cannot proceed cleanly, stop with the command output rather than hand-patching a broken scaffold.",
+      "Do not modify .nogra/ contracts or config.json; only update the .nogra/state/* continuity files named in scope."
+    ],
+    "executionRole": "nogra:executor",
+    "executionRuntime": "anthropic:sonnet",
+    "executionEffort": "medium",
+    "executionContext": "default",
+    "executionMaxTurns": null,
+    "executionRuntimePolicyProfile": "default",
+    "executionRuntimeSource": "release default",
+    "executionLabel": "Executor · Sonnet · Ok",
+    "nextOwner": "Manager"
+  },
+  "paths": {
+    "artifactsDir": ".nogra/transport/artifacts/transport-20260605093948-22738549",
+    "report": ".nogra/transport/artifacts/transport-20260605093948-22738549/report.md",
+    "output": ".nogra/transport/artifacts/transport-20260605093948-22738549/output.md",
+    "log": ".nogra/transport/artifacts/transport-20260605093948-22738549/log"
+  },
+  "artifacts": {
+    "reportExists": true,
+    "outputExists": true,
+    "logExists": false
+  },
+  "summary": "Lantern v0.1 Phase 1 (foundation) complete and Manager-verified. Next.js + FastAPI monorepo with persistent nav shell across all six areas, five labeled stub pages, and a working single-provider streaming chat (SSE) with SQLite session persistence behind an env-configured OpenAI-compatible client. Streaming + session round-trip proven by a stub-provider pytest suite with no network/secrets.",
+  "error": "",
+  "redactions": [],
+  "completedAt": "2026-06-05T09:55:49.553Z",
+  "durationSeconds": 961
+}

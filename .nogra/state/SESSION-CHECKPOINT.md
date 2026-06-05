@@ -2,27 +2,28 @@
 
 Workspace: Lantern
 Created: 2026-06-05T08:05:15Z
-Updated: 2026-06-05T08:06Z
+Updated: 2026-06-05T10:00:00Z
 
 ## Current State
 
-Nogra is initialized locally for the **Lantern** workspace. Project decisions
-are locked (see `DECISIONS.md`). No application code written yet.
+**Phase 1 foundation complete** (brief-lantern-v0.1-phase-1-…-587ac5, run transport-20260605093948-22738549).
 
-Project: **"Lantern"** — a self-hosted AI workspace (React/Next.js + Tailwind +
-shadcn/ui frontend, Python FastAPI backend). Inspired by Odysseus, but broader
-with a much better UI. New project from scratch.
-
-This workspace was bootstrapped on Windows and pushed to git so work can
-continue on another machine (Mac) with the exact same process.
-
-## Verification
-
-- Setup created the local `.nogra/` domain structure (18 files).
-- SessionStart must remain read-only: no full memory load, no write, no dispatch.
+What shipped:
+- Monorepo root (package.json, pnpm-workspace.yaml).
+- `apps/web` — Next.js 16 + Tailwind v4 app with persistent nav shell (NavSidebar),
+  5 stub pages (Documents, Notes, Tasks, Memory, Settings), and a Chat home with
+  a full streaming chat UI (session sidebar, message list, SSE composer, session
+  controls). Build passes.
+- `apps/api` — FastAPI backend with `/health`, SQLite session persistence,
+  OpenAI-compatible streaming client layer, and a `POST /chat` SSE endpoint.
+  5/5 pytest tests pass (no network, monkeypatched client).
+- `.env.example` at workspace root with commented provider options
+  (OpenRouter, Gemini, Groq, Ollama).
+- README updated with local run instructions for both apps.
 
 ## Next
 
-- **Write the Nogra brief for Lantern v0.1** (broad feature shell: chat working,
-  other areas as light modules/stubs).
-- Then: review brief → **GO** → dispatch → evidence → verify.
+**Phase 2 — multi-provider selection + deepen light modules:**
+- Provider picker UI (select base URL + model at runtime, persist in settings).
+- Light module depth: Documents (upload + text extract), Notes (CRUD), Tasks (list/check).
+- Memory module: embed + store user notes, surface relevant context in chat.

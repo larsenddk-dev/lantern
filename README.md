@@ -6,7 +6,7 @@ Lantern is your own ChatGPT/Claude-style workspace, running on **your** hardware
 with **your** data. Inspired by [PewDiePie's Odysseus](https://github.com/pewdiepie-archdaemon/odysseus),
 but broader, with more features and a much better UI. New project, built from scratch — not a fork.
 
-> **Status:** bootstrapping. Nogra workspace initialized; the first brief is the next step. No app code yet.
+> **Status:** v0.1 Phase 1 complete. Nav shell + Chat (streaming, sessions) working. Other areas are light stubs.
 
 ## Tech stack
 - **Frontend:** React / Next.js · Tailwind CSS · shadcn/ui
@@ -29,6 +29,47 @@ modules / stubs that we deepen over later milestones:
 Agent + tools (web/files/shell/MCP) · Memory/RAG · Deep Research · Compare ·
 Email (IMAP/SMTP + AI triage) · Calendar (CalDAV) · Cookbook (hardware-aware
 model serving) · image editor · PWA.
+
+## Local development
+
+### 1. Configure environment
+
+```bash
+cp .env.example .env
+# Edit .env — add your API key (OpenRouter, Gemini, Groq, or point to local Ollama)
+```
+
+### 2. Start the API (FastAPI)
+
+```bash
+cd apps/api
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
+
+Health check: http://localhost:8000/health
+
+### 3. Start the web app (Next.js)
+
+In a separate terminal:
+
+```bash
+cd apps/web
+npm install        # or pnpm install if you have pnpm
+npm run dev
+```
+
+Open http://localhost:3000 — the app redirects to `/chat`.
+
+### 4. Run API tests (no network required)
+
+```bash
+cd apps/api
+source .venv/bin/activate
+pytest -v
+```
 
 ## Workflow — Nogra
 This repo is driven with **[Nogra](https://github.com/nograai/nogra-claude-marketplace)**:

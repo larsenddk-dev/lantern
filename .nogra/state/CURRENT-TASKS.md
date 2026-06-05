@@ -1,16 +1,20 @@
 # Current Tasks
 
 Workspace: Lantern
-Updated: 2026-06-05T08:06Z
+Updated: 2026-06-05T10:00:00Z
+
+## Completed
+
+- [x] Phase 1 — Foundation scaffold (brief-587ac5): nav shell, 5 stub pages,
+      FastAPI backend with streaming chat + SQLite sessions, Chat UI with SSE,
+      `.env.example`, README run instructions. Build + tests green.
 
 ## Active
 
-- **Write the Nogra brief for Lantern v0.1** (broad feature shell).
+_None — awaiting next brief._
 
-## Parked
+## Parked (next phases)
 
-- v0.1 build (after brief + GO): scaffold Next.js + FastAPI; chat core
-  (multi-provider, streaming, sessions); feature-shell navigation + light modules
-  (Documents, Notes, Tasks, Memory, Settings).
-- Later milestones: Agent + tools, Memory/RAG, Deep Research, Compare, Email,
-  Calendar, Cookbook (model serving), image editor, PWA.
+- Phase 2: Multi-provider selector UI; deepen Documents (upload), Notes (CRUD), Tasks (check/list).
+- Phase 3: Memory/RAG — embed + store, surface context in chat.
+- Later: Agent + tools, Deep Research, Compare, Email, Calendar, Cookbook, PWA.
