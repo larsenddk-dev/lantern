@@ -19,6 +19,19 @@ Updated: 2026-06-05T08:06Z
   (OpenRouter free, Google Gemini free, Groq, Mistral, Cerebras, …) + local Ollama.
 - **Workflow:** Nogra (brief → GO → dispatch → evidence → verify).
 
+## Direction (2026-06-05)
+
+- **Target:** build through to **v1** (full feature set), not just the v0.1 shell.
+- **Desktop app:** Lantern ships as an installable **desktop app** using **Tauri
+  + a Python/FastAPI sidecar** — keep Python (best for the AI roadmap: RAG,
+  agents, Cookbook model-serving) and wrap it in a small native Tauri shell with
+  the backend bundled as a sidecar binary (PyInstaller).
+- **De-risk first:** validate desktop packaging with an early Tauri spike before
+  building the remaining v1 features, so we don't build on an unproven shell.
+- **Frontend for desktop:** prefer Next.js static export (`output: 'export'`)
+  loaded by Tauri, with client-side calls to the sidecar API; fall back to a
+  Next Node sidecar only if static export proves non-viable (spike to confirm).
+
 ## Local Decisions
 
 - Nogra local records live in `.nogra/`.

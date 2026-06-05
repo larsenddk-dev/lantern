@@ -1,0 +1,79 @@
+{
+  "schema": "nogra.transport.run.v1",
+  "releaseVersion": "v1.0.0",
+  "runId": "transport-20260605145812-e3aed9cf",
+  "createdAt": "2026-06-05T14:58:12.645Z",
+  "updatedAt": "2026-06-05T15:06:59.198Z",
+  "status": "ok",
+  "phase": "returned",
+  "target": "executor",
+  "targetRole": "executor",
+  "targetModel": "anthropic:sonnet",
+  "executionRole": "nogra:executor",
+  "executionRuntime": "anthropic:sonnet",
+  "executionEffort": "medium",
+  "executionContext": "default",
+  "executionMaxTurns": null,
+  "executionRuntimePolicyProfile": "default",
+  "executionRuntimeSource": "release default",
+  "executionLabel": "Executor · Sonnet · Ok",
+  "briefId": "brief-lantern-v0.1-phase-2b-real-crud-for-notes-tasks-2026-06-05-172e43",
+  "metadata": {
+    "mode": "local",
+    "receiptType": "localDispatchReceipt",
+    "targetRole": "executor",
+    "targetModel": "anthropic:sonnet",
+    "scopeFiles": [
+      "apps/api/main.py (EDIT — notes + tasks tables, db_* helpers, endpoints)",
+      "apps/api/test_main.py (EDIT — add Notes + Tasks offline tests)",
+      "apps/web/lib/types.ts (EDIT — Note/Task types + payloads)",
+      "apps/web/lib/api.ts (EDIT — notes/tasks client methods)",
+      "apps/web/app/notes/page.tsx (EDIT — replace stub with CRUD UI)",
+      "apps/web/app/tasks/page.tsx (EDIT — replace stub with CRUD UI)",
+      "apps/web/components/ (NEW — optional note/task UI components if helpful)",
+      "README.md (EDIT — Notes + Tasks usage)",
+      ".nogra/state/SESSION-CHECKPOINT.md (EDIT — Phase 2b done, name 2c)",
+      ".nogra/state/CURRENT-TASKS.md (EDIT — move 2b to done, queue 2c)"
+    ],
+    "successCriteria": [
+      "The backend exposes working Notes CRUD and Tasks CRUD (including marking a task done/undone), all persisted in the SQLite database.",
+      "The Notes page can create, list, edit, and delete notes, and the changes persist across a page reload (data comes from the API, not local state).",
+      "The Tasks page can create a task, toggle it done/undone, and delete it, and the changes persist across a page reload.",
+      "New offline pytest tests cover Notes CRUD and Tasks CRUD + toggle, the full suite passes with no network or secrets, and the 11 pre-existing tests still pass.",
+      "`next build` for apps/web completes cleanly; the Documents and Memory pages remain stubs and the nav is unchanged.",
+      "README and .nogra/state files are updated to mark Phase 2b done and name Phase 2c (Documents) as next."
+    ],
+    "stopCriteria": [
+      "First action: read CLAUDE.md, README.md, .nogra/state/*, apps/api/main.py, apps/api/test_main.py, apps/web/lib/types.ts, apps/web/lib/api.ts, and the notes/tasks stub pages. Then verify toolchain: `python3 --version`, the api venv at apps/api/.venv (or create it from requirements.txt), and the JS package manager. If python3 or node is missing, status: blocked, name what is missing, and do not install runtimes.",
+      "Stay strictly within Notes + Tasks. Do NOT implement Documents (upload/extraction), Memory, or any provider/chat/session feature changes; those pages stay as they are.",
+      "Do not weaken, skip, or delete existing tests to make the suite pass. If a pre-existing test would break, stop and report it rather than editing the test to hide a regression.",
+      "Do not add new third-party dependencies for this slice. If you believe one is genuinely required, stop and return for approval instead of installing it.",
+      "Do not modify .nogra/ contracts or config.json; only update the .nogra/state/* files named in scope. No secrets, no live external provider calls."
+    ],
+    "executionRole": "nogra:executor",
+    "executionRuntime": "anthropic:sonnet",
+    "executionEffort": "medium",
+    "executionContext": "default",
+    "executionMaxTurns": null,
+    "executionRuntimePolicyProfile": "default",
+    "executionRuntimeSource": "release default",
+    "executionLabel": "Executor · Sonnet · Ok",
+    "nextOwner": "Manager"
+  },
+  "paths": {
+    "artifactsDir": ".nogra/transport/artifacts/transport-20260605145812-e3aed9cf",
+    "report": ".nogra/transport/artifacts/transport-20260605145812-e3aed9cf/report.md",
+    "output": ".nogra/transport/artifacts/transport-20260605145812-e3aed9cf/output.md",
+    "log": ".nogra/transport/artifacts/transport-20260605145812-e3aed9cf/log"
+  },
+  "artifacts": {
+    "reportExists": true,
+    "outputExists": true,
+    "logExists": false
+  },
+  "summary": "Lantern v0.1 Phase 2b (real CRUD for Notes + Tasks) complete and Manager-verified. New SQLite notes/tasks tables + db_* helpers + 10 endpoints follow existing conventions; Notes and Tasks pages replaced their stubs with real API-backed CRUD UIs. Manager re-ran the suite: 17 passed (11 prior + 6 new), and next build is clean. Documents/Memory remain stubs.",
+  "error": "",
+  "redactions": [],
+  "completedAt": "2026-06-05T15:06:59.197Z",
+  "durationSeconds": 527
+}

@@ -6,7 +6,9 @@ Lantern is your own ChatGPT/Claude-style workspace, running on **your** hardware
 with **your** data. Inspired by [PewDiePie's Odysseus](https://github.com/pewdiepie-archdaemon/odysseus),
 but broader, with more features and a much better UI. New project, built from scratch — not a fork.
 
-> **Status:** v0.1 Phase 2a complete. Multi-provider selector working (Settings + chat header switcher). Chat remains fully functional.
+> **Status:** v0.1 Phase 2b complete (Chat, Notes, Tasks, multi-provider Settings).
+> Heading toward **v1** as an installable **desktop app** — the Tauri + Python-sidecar
+> packaging is proven (Phase 3a spike; see [`apps/desktop/README.md`](apps/desktop/README.md)).
 
 ## Tech stack
 - **Frontend:** React / Next.js · Tailwind CSS · shadcn/ui
@@ -23,7 +25,10 @@ ship as real-but-light modules / stubs that we deepen over later milestones:
 |---|---|
 | Chat | ✅ working (streaming, sessions, provider switching) |
 | Settings — AI Providers | ✅ working (add/edit/delete/activate; key masking) |
-| Documents · Notes · Tasks · Memory | 🟡 light modules |
+| Notes | ✅ working (create, list, edit, delete; persisted in SQLite) |
+| Tasks | ✅ working (create, toggle done/undone, delete; persisted in SQLite) |
+| Documents | 🟡 stub (Phase 2c) |
+| Memory | 🟡 stub (Phase 3) |
 | Agent + tools | ⬜ later |
 
 ## Later milestones

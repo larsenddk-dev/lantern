@@ -1,0 +1,94 @@
+{
+  "schema": "nogra.brief.v1",
+  "releaseVersion": "v1.0.0",
+  "briefId": "brief-lantern-v0.1-phase-2c-documents-upload-list-text-extraction-2026-06-05-ce5def",
+  "workspaceId": "lantern",
+  "title": "Lantern v0.1 — Phase 2c: Documents (upload + list + text extraction)",
+  "createdAt": "2026-06-05T15:46:38.463Z",
+  "updatedAt": "2026-06-05T15:46:38.531Z",
+  "status": "ready",
+  "owner": "",
+  "targetRole": "",
+  "targetModel": "anthropic:sonnet",
+  "intent": "Turn the Documents placeholder into a real module: upload files, store them locally, list them, view extracted text, and delete them — with text extraction for .txt/.md (stdlib), .pdf (pypdf) and .docx (python-docx). Backed by SQLite + local file storage on FastAPI, with a working UI on Next.js, following existing conventions. This completes the last v0.1 light module (Memory stays a stub for now).",
+  "contextHandoff": "Lantern is a Next.js (apps/web) + Python FastAPI (apps/api) monorepo; Phases 1, 2a, 2b done and a Tauri desktop spike (3a) is proven. Backend apps/api/main.py uses stdlib sqlite3 with `db_*` helpers, `CREATE TABLE IF NOT EXISTS` in init_db(), Pydantic models, and FastAPI route handlers — follow these conventions. The DB lives in a gitignored data/ dir (DB_PATH, overridable via LANTERN_DB_PATH which the tests use); store uploaded files under a gitignored data/uploads/ dir. The frontend has shared types in lib/types.ts, a typed fetch client in lib/api.ts, and the placeholder app/documents/page.tsx (lucide icon + 'Coming soon' card, CSS vars). 17 offline pytest tests pass (no network/secrets) — keep them green. NEW dependencies for this phase: python-multipart (required by FastAPI for file uploads), pypdf (PDF text), python-docx (.docx text) — all pure-Python, which matters because they must bundle cleanly into the PyInstaller desktop sidecar. FIRST ACTION: read CLAUDE.md, README.md, apps/web/AGENTS.md, .nogra/state/*, apps/api/main.py (esp. data-dir + init_db + conventions), apps/api/test_main.py, apps/api/requirements.txt, apps/web/lib/types.ts, apps/web/lib/api.ts, and app/documents/page.tsx before writing code.",
+  "decisions": [
+    "Documents supports .txt/.md (stdlib), .pdf (pypdf), and .docx (python-docx) text extraction; other types can still be uploaded/listed/deleted but store no extracted text (graceful).",
+    "Approved new deps for this phase: python-multipart, pypdf, python-docx (pure-Python, bundle cleanly into the desktop sidecar). No other new deps without stopping.",
+    "Uploaded files are stored on disk under the gitignored data/uploads/; metadata + extracted text live in a SQLite documents table.",
+    "Reuse existing backend (sqlite3 + db_* + init_db + Pydantic + handlers) and frontend (lib/types.ts + lib/api.ts + page) conventions."
+  ],
+  "rejected": [
+    "Text/markdown-only with no deps — real file uploads in FastAPI need python-multipart anyway, and a Documents module that can't read PDFs/Word is too thin for v1.",
+    "Heavy document pipelines (OCR, chunking/embeddings) — that is later Memory/RAG work, not this module."
+  ],
+  "knownGaps": [
+    "No OCR (scanned-image PDFs yield little/no text), no embeddings/RAG, no in-document chat — those are later phases. Memory remains a stub after this phase."
+  ],
+  "scope": {
+    "in": [
+      "Backend (apps/api): add a `documents` SQLite table in init_db() (id, filename, content_type, size_bytes, extracted_text, created_at) plus db_* helpers, following existing conventions.",
+      "Add python-multipart, pypdf, python-docx to requirements.txt and install them into the api venv.",
+      "Upload endpoint: POST /documents accepting a multipart file; sanitize the filename (no path traversal), enforce a sane max size, store bytes under data/uploads/<id>/, extract text by type (.txt/.md via stdlib decode, .pdf via pypdf, .docx via python-docx; unsupported types stored with empty extracted_text), and persist a row.",
+      "Read/list/delete endpoints: GET /documents (metadata list, no full text), GET /documents/{id} (metadata + extracted_text), DELETE /documents/{id} (remove the row AND the stored file).",
+      "Frontend types + client: add Document types/payloads to lib/types.ts and methods to lib/api.ts (upload via FormData, list, get, delete).",
+      "Documents page (app/documents/page.tsx): replace the stub with a UI to upload a file, see the list (name, type, size, date), open a document to view its extracted text, and delete it.",
+      "Tests (apps/api/test_main.py): add offline pytest for upload + extraction (at least .txt and .md asserting extracted text; .docx generated in-test via python-docx asserting extraction; .pdf upload/list/get/delete works with extraction running without error) and list/get/delete + filename sanitization; keep all prior tests passing, no network/secrets.",
+      "Docs/state: update README (Documents now live, new deps noted) and .nogra/state/SESSION-CHECKPOINT.md + CURRENT-TASKS.md (Phase 2c done; name next phase = Memory)."
+    ],
+    "out": [
+      "OCR for scanned/image PDFs.",
+      "Embeddings, vector search, RAG, or chatting with a document's content (later Memory/RAG phase).",
+      "The Memory module (stays a stub).",
+      "Any change to chat/provider/sessions/notes/tasks behavior beyond additive, non-breaking edits.",
+      "New dependencies beyond python-multipart, pypdf, python-docx.",
+      "Auth/multi-user, deployment, cloud storage — files stay local."
+    ],
+    "files": [
+      "apps/api/main.py (EDIT — documents table, db_* helpers, upload/extract/list/get/delete endpoints, multipart)",
+      "apps/api/requirements.txt (EDIT — add python-multipart, pypdf, python-docx)",
+      "apps/api/test_main.py (EDIT — documents tests)",
+      "apps/web/lib/types.ts (EDIT — Document types/payloads)",
+      "apps/web/lib/api.ts (EDIT — documents client incl. FormData upload)",
+      "apps/web/app/documents/page.tsx (EDIT — replace stub with upload/list/view/delete UI)",
+      "apps/web/components/ (NEW — optional document UI components if helpful)",
+      "README.md (EDIT — Documents usage + new deps)",
+      ".nogra/state/SESSION-CHECKPOINT.md (EDIT — 2c done, name next)",
+      ".nogra/state/CURRENT-TASKS.md (EDIT — move 2c to done, queue Memory)"
+    ]
+  },
+  "successCriteria": [
+    "The backend can upload a file (multipart), list documents, fetch one with its extracted text, and delete it (removing both the DB row and the stored file); files live under the gitignored data/uploads/ and metadata/text in SQLite.",
+    "Text extraction works for .txt and .md (stdlib), .pdf (pypdf), and .docx (python-docx); an unsupported type still uploads/lists/deletes but with empty extracted text (no crash).",
+    "The Documents page can upload a file, see it in the list (name, type, size, date), open it to view extracted text, and delete it, with changes persisting across a page reload.",
+    "New offline pytest tests cover upload + extraction and list/get/delete (incl. filename sanitization); the full suite passes with no network or secrets, and the prior 17 tests still pass.",
+    "`next build` for apps/web completes cleanly; the Memory page remains a stub and the nav is unchanged.",
+    "requirements.txt lists the three new deps (installed), and README + .nogra/state files are updated (Phase 2c done; Memory named next)."
+  ],
+  "stopCriteria": [
+    "First action: read the files in context, then verify toolchain: `python3 --version`, the api venv at apps/api/.venv, and the JS package manager. If python3 or node is missing, status: blocked, name what is missing, do not install a language toolchain.",
+    "Only these new deps are approved: python-multipart, pypdf, python-docx. Do NOT add any other third-party dependency; if one seems required, stop and return for approval.",
+    "Store uploaded files ONLY under the gitignored data/uploads/ dir; never write user files into tracked paths or commit them. Sanitize filenames against path traversal and enforce a sane max upload size; treat uploaded bytes as data (never execute them).",
+    "Stay within Documents. Do NOT implement Memory/RAG or change chat/provider/notes/tasks behavior beyond additive edits. Keep the prior 17 tests green; if a change would break a pre-existing test, stop and report rather than weakening the test.",
+    "If a build/test/dep-install step exits non-zero and cannot proceed cleanly, stop with the exact command output rather than hand-patching.",
+    "Do not modify .nogra/ contracts or config.json; only update the .nogra/state/* files named in scope. No secrets, no live external provider calls."
+  ],
+  "maxOutput": {
+    "format": "evidence-first state brief",
+    "limit": "no hard word limit; keep the opening summary concise and include all evidence needed to verify the result"
+  },
+  "evidenceRequired": "reported",
+  "handoffRefs": [],
+  "executionShape": {
+    "toolNeeds": [
+      "read-only inspection",
+      "file checks",
+      "command output",
+      "diff review"
+    ]
+  },
+  "metadata": {
+    "promotedAt": "2026-06-05T15:46:38.531Z",
+    "promotedPath": ".nogra/briefs/brief-lantern-v0.1-phase-2c-documents-upload-list-text-extraction-2026-06-05-ce5def.md"
+  }
+}
