@@ -2,11 +2,30 @@
 
 Workspace: Lantern
 Created: 2026-06-05T08:05:15Z
-Updated: 2026-06-05T15:35Z
+Updated: 2026-06-05T22:50Z
 
 ## Current State
 
-**Phase 3a complete — Tauri desktop spike** (brief
+**Documents module complete — Phase 2c** (built DIRECTLY, without Nogra, at the
+user's request — no brief/dispatch/verify run for this one). Last v0.1 feature
+shipped; all on GitHub (commit e04a62a + later chores). Verified by Manager:
+- apps/api: `documents` SQLite table + db_* helpers; endpoints POST `/documents`
+  (multipart upload), GET `/documents`, GET `/documents/{id}` (+extracted text),
+  DELETE `/documents/{id}` (row + stored file).
+- Text extraction: .txt/.md (stdlib), .pdf (pypdf), .docx (python-docx);
+  unsupported types upload gracefully with empty text. Files under gitignored
+  `data/uploads/`; filename sanitized, 25 MB cap, empty uploads rejected.
+- New deps: python-multipart, pypdf, python-docx (pure-Python; bundle into the
+  Tauri sidecar). apps/web: Document types + api client (FormData) + Documents
+  page (upload/list/view-text/delete).
+- Tests: **24/24 pytest green** (17 prior + 7 new). `next build` clean.
+  Live round-trip + browser render confirmed by Manager.
+
+Also synced from the other machine (commits 154de1f, 5e634c3): dev chore —
+web preview now runs via `npm run dev` with autoPort (`.claude/launch.json`);
+package-lock resync. No feature impact.
+
+**Prior: Phase 3a — Tauri desktop spike** (brief
 brief-lantern-v1-phase-3a-tauri-desktop-spike-…, run
 transport-20260605151942-647d304a). Desktop packaging architecture **proven**:
 - `apps/desktop/` Tauri v2 app (Tauri CLI 2.11.2). `cargo`/Tauri shell
@@ -53,17 +72,22 @@ Shipped on top of Phase 2a:
   tasks 404, tasks bool type-check) — 17/17 pass, no network/secrets.
 - README updated: Notes + Tasks marked as working.
 
+## v0.1 shell status
+
+✅ Chat · ✅ Notes · ✅ Tasks · ✅ Documents · ✅ Settings (providers) · ✅ logo
+· 🟡 **Memory** (last light module remaining). Desktop packaging proven (3a).
+
 ## Next
 
-Resume v1 feature build on the proven desktop shell:
-- **Phase 2c — Documents:** upload + list + text extract (PDF/Word decision
-  pending), persisted in SQLite + UI.
-- **Memory** (light module), then **Memory/RAG** (embed notes, surface context).
+- **Memory** (light module) — last v0.1 module. Then **Memory/RAG** (embed
+  notes, surface relevant context in chat).
+- Open visual check: launch the desktop window (`cd apps/desktop && npm run dev`)
+  to confirm Lantern renders natively against the sidecar.
 - Then: Agent + tools, Deep Research, Compare, Email, Calendar, Cookbook
   (model serving), image editor, PWA.
 - **Desktop polish (later):** installers (.dmg/.msi/.AppImage), code signing +
   notarization, auto-update, tray/menu, faster sidecar start (`--onedir`),
-  Windows/Linux builds.
+  Windows/Linux builds (Windows .exe via PyInstaller-on-Windows + tauri build).
 
 ## Verification
 

@@ -1,7 +1,7 @@
 # Current Tasks
 
 Workspace: Lantern
-Updated: 2026-06-05T15:35Z
+Updated: 2026-06-05T22:50Z
 
 ## Completed
 
@@ -18,22 +18,28 @@ Updated: 2026-06-05T15:35Z
       apps/desktop Tauri v2 shell compiles; FastAPI PyInstaller sidecar serves
       /health; Next static export viable; icons from logo; docs in
       apps/desktop/README.md. Build artifacts gitignored. Manager-verified.
+- [x] Documents module — Phase 2c (built DIRECTLY, no Nogra run): upload +
+      text extraction (.txt/.md/.pdf/.docx) + list/view/delete; SQLite + files
+      under gitignored data/uploads/; 3 new deps (python-multipart, pypdf,
+      python-docx). 24/24 pytest + `next build` green; live + browser verified.
+- [x] Branding — pixel-lantern logo in sidebar + favicon (app/icon.png).
 
 ## Active
 
-_None — awaiting next brief._
+_None — awaiting next step (Memory module)._
 
 ## Open user/Manager check
 
 - Launch the desktop window (`cd apps/desktop && npm run dev`) to visually
-  confirm Lantern renders natively + chat/notes/tasks work against the sidecar.
+  confirm Lantern renders natively + chat/notes/tasks/documents work against
+  the sidecar.
 
 ## Parked (next phases)
 
-- Phase 2c: Documents — upload + list + text extract (PDF/Word dep decision
-  pending), persisted in SQLite + UI.
-- Memory (light), then Memory/RAG — embed notes, surface context in chat.
+- **Memory** (light module) — last v0.1 module. Then Memory/RAG: embed notes,
+  surface relevant context in chat.
 - Later: Agent + tools, Deep Research, Compare, Email, Calendar, Cookbook,
   image editor, PWA.
 - Desktop polish (later): installers, code signing/notarization, auto-update,
-  tray/menu, faster sidecar start (--onedir), Windows/Linux builds.
+  tray/menu, faster sidecar start (--onedir), Windows/Linux builds (Windows
+  .exe = PyInstaller-on-Windows sidecar + tauri build / CI matrix).
