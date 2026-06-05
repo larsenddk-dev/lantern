@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -31,9 +32,17 @@ export function NavSidebar() {
       className="flex flex-col h-full shrink-0 py-4"
     >
       {/* Logo */}
-      <div className="px-4 mb-6">
+      <div className="px-4 mb-6 flex items-center gap-2">
+        <Image
+          src="/lantern-logo.png"
+          alt="Lantern logo"
+          width={28}
+          height={28}
+          priority
+          className="shrink-0"
+        />
         <span className="text-lg font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-          🏮 Lantern
+          Lantern
         </span>
       </div>
 
