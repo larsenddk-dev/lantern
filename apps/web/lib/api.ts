@@ -11,6 +11,14 @@ import type {
   CreateProviderPayload,
   UpdateProviderPayload,
   ActiveProviderResponse,
+  Note,
+  CreateNotePayload,
+  UpdateNotePayload,
+  Task,
+  CreateTaskPayload,
+  UpdateTaskPayload,
+  DocumentMeta,
+  DocumentDetail,
 } from "./types";
 
 const BASE_URL =
@@ -140,6 +148,99 @@ export const api = {
   activateProvider(id: string): Promise<Provider> {
     return request(`/providers/${id}/activate`, { method: "POST" });
   },
+
+  // ---------------------------------------------------------------------------
+  // Notes API helpers (Phase 2b)
+  // ---------------------------------------------------------------------------
+
+  listNotes(): Promise<Note[]> {
+    return request("/notes");
+  },
+
+  getNote(id: string): Promise<Note> {
+    return request(`/notes/${id}`);
+  },
+
+  createNote(payload: CreateNotePayload): Promise<Note> {
+    return request("/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateNote(id: string, payload: UpdateNotePayload): Promise<Note> {
+    return request(`/notes/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  deleteNote(id: string): Promise<{ ok: boolean }> {
+    return request(`/notes/${id}`, { method: "DELETE" });
+  },
+
+  // ---------------------------------------------------------------------------
+  // Tasks API helpers (Phase 2b)
+  // ---------------------------------------------------------------------------
+
+  listTasks(): Promise<Task[]> {
+    return request("/tasks");
+  },
+
+  getTask(id: string): Promise<Task> {
+    return request(`/tasks/${id}`);
+  },
+
+  createTask(payload: CreateTaskPayload): Promise<Task> {
+    return request("/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateTask(id: string, payload: UpdateTaskPayload): Promise<Task> {
+    return request(`/tasks/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  deleteTask(id: string): Promise<{ ok: boolean }> {
+    return request(`/tasks/${id}`, { method: "DELETE" });
+  },
+
+  // ---------------------------------------------------------------------------
+  // Documents API helpers (Phase 2c)
+  // ---------------------------------------------------------------------------
+
+  listDocuments(): Promise<DocumentMeta[]> {
+    return request("/documents");
+  },
+
+  getDocument(id: string): Promise<DocumentDetail> {
+    return request(`/documents/${id}`);
+  },
+
+  uploadDocument(file: File): Promise<DocumentDetail> {
+    const form = new FormData();
+    form.append("file", file);
+    // Note: do NOT set Content-Type — the browser adds the multipart boundary.
+    return request("/documents", { method: "POST", body: form });
+  },
+
+  deleteDocument(id: string): Promise<{ ok: boolean }> {
+    return request(`/documents/${id}`, { method: "DELETE" });
+  },
 };
 
-export type { Session, SessionDetail, Message, Provider, CreateProviderPayload, UpdateProviderPayload };
+export type {
+  Session, SessionDetail, Message,
+  Provider, CreateProviderPayload, UpdateProviderPayload,
+  Note, CreateNotePayload, UpdateNotePayload,
+  Task, CreateTaskPayload, UpdateTaskPayload,
+  DocumentMeta, DocumentDetail,
+};

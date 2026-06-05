@@ -5,10 +5,11 @@ import json
 import sqlite3
 import uuid
 import time
+import shutil
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -31,6 +32,10 @@ LANTERN_WEB_ORIGIN = os.environ.get("LANTERN_WEB_ORIGIN", "http://localhost:3000
 _DEFAULT_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _DEFAULT_DB_PATH = os.path.join(_DEFAULT_DATA_DIR, "lantern.db")
 DB_PATH = os.environ.get("LANTERN_DB_PATH", _DEFAULT_DB_PATH)
+
+# Uploaded document files are stored on disk in a gitignored uploads/ dir
+# next to the DB (so tests that override LANTERN_DB_PATH stay isolated too).
+UPLOADS_DIR = os.path.join(os.path.dirname(DB_PATH) or ".", "uploads")
 
 
 def _ensure_data_dir() -> None:
@@ -84,6 +89,31 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS notes (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                done INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS documents (
+                id TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                content_type TEXT NOT NULL DEFAULT '',
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                extracted_text TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
             );
             """
         )
@@ -140,6 +170,126 @@ def db_append_message(session_id: str, role: str, content: str) -> dict:
             "UPDATE sessions SET updated_at = ? WHERE id = ?", (now, session_id)
         )
     return {"id": msg_id, "session_id": session_id, "role": role, "content": content, "created_at": now}
+
+
+# ---------------------------------------------------------------------------
+# Notes helpers
+# ---------------------------------------------------------------------------
+
+def db_create_note(title: str, content: str) -> dict:
+    note_id = str(uuid.uuid4())
+    now = _now_iso()
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT INTO notes (id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (note_id, title, content, now, now),
+        )
+    return {"id": note_id, "title": title, "content": content, "created_at": now, "updated_at": now}
+
+
+def db_list_notes() -> list[dict]:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM notes ORDER BY updated_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def db_get_note(note_id: str) -> Optional[dict]:
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM notes WHERE id = ?", (note_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def db_update_note(note_id: str, title: Optional[str], content: Optional[str]) -> Optional[dict]:
+    row = db_get_note(note_id)
+    if row is None:
+        return None
+    now = _now_iso()
+    new_title = title if title is not None else row["title"]
+    new_content = content if content is not None else row["content"]
+    with _get_conn() as conn:
+        conn.execute(
+            "UPDATE notes SET title=?, content=?, updated_at=? WHERE id=?",
+            (new_title, new_content, now, note_id),
+        )
+    return {"id": note_id, "title": new_title, "content": new_content,
+            "created_at": row["created_at"], "updated_at": now}
+
+
+def db_delete_note(note_id: str) -> bool:
+    with _get_conn() as conn:
+        result = conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+    return result.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Tasks helpers
+# ---------------------------------------------------------------------------
+
+def db_create_task(title: str) -> dict:
+    task_id = str(uuid.uuid4())
+    now = _now_iso()
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT INTO tasks (id, title, done, created_at, updated_at) VALUES (?, ?, 0, ?, ?)",
+            (task_id, title, now, now),
+        )
+    return {"id": task_id, "title": title, "done": False, "created_at": now, "updated_at": now}
+
+
+def db_list_tasks() -> list[dict]:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM tasks ORDER BY created_at DESC"
+        ).fetchall()
+    return [_task_to_public(dict(r)) for r in rows]
+
+
+def _task_to_public(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "done": bool(row["done"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def db_get_task(task_id: str) -> Optional[dict]:
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    return _task_to_public(dict(row)) if row else None
+
+
+def db_update_task(task_id: str, title: Optional[str], done: Optional[bool]) -> Optional[dict]:
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    row = dict(row)
+    now = _now_iso()
+    new_title = title if title is not None else row["title"]
+    new_done = int(done) if done is not None else row["done"]
+    with _get_conn() as conn:
+        conn.execute(
+            "UPDATE tasks SET title=?, done=?, updated_at=? WHERE id=?",
+            (new_title, new_done, now, task_id),
+        )
+    return {"id": task_id, "title": new_title, "done": bool(new_done),
+            "created_at": row["created_at"], "updated_at": now}
+
+
+def db_delete_task(task_id: str) -> bool:
+    with _get_conn() as conn:
+        result = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    return result.rowcount > 0
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +461,107 @@ async def stream_chat_completion(
 
 
 # ---------------------------------------------------------------------------
+# Documents — upload, store on disk, extract text
+# ---------------------------------------------------------------------------
+
+# Reject uploads larger than this to avoid runaway storage / memory use.
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+
+# Extensions we extract plain text from directly. PDFs and .docx are handled
+# separately; any other type uploads fine but stores empty extracted text.
+_TEXT_EXTS = {".txt", ".md", ".markdown", ".csv", ".json", ".log", ".text"}
+
+
+def _ensure_uploads_dir() -> None:
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+
+def _safe_filename(filename: str) -> str:
+    """Reduce an uploaded filename to a safe, non-empty basename (no path traversal)."""
+    base = os.path.basename(filename or "").replace("\\", "").strip()
+    base = base.lstrip(".") or "file"
+    return base[:255]
+
+
+def _extract_text(path: str, filename: str) -> str:
+    """Best-effort text extraction by extension. Never raises — returns '' on failure."""
+    ext = os.path.splitext(filename)[1].lower()
+    try:
+        if ext in _TEXT_EXTS:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        if ext == ".pdf":
+            from pypdf import PdfReader
+            reader = PdfReader(path)
+            return "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+        if ext == ".docx":
+            import docx  # python-docx
+            document = docx.Document(path)
+            return "\n".join(p.text for p in document.paragraphs).strip()
+    except Exception:
+        # Corrupt / unreadable file — keep the document but with empty text
+        # rather than failing the whole upload.
+        return ""
+    return ""
+
+
+def _document_to_public(row: dict, *, include_text: bool = False) -> dict:
+    out = {
+        "id": row["id"],
+        "filename": row["filename"],
+        "content_type": row["content_type"],
+        "size_bytes": row["size_bytes"],
+        "has_text": bool((row.get("extracted_text") or "").strip()),
+        "created_at": row["created_at"],
+    }
+    if include_text:
+        out["extracted_text"] = row.get("extracted_text") or ""
+    return out
+
+
+def db_create_document(doc_id: str, filename: str, content_type: str,
+                       size_bytes: int, extracted_text: str) -> dict:
+    now = _now_iso()
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT INTO documents (id, filename, content_type, size_bytes, extracted_text, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (doc_id, filename, content_type, size_bytes, extracted_text, now),
+        )
+    return _document_to_public(
+        {"id": doc_id, "filename": filename, "content_type": content_type,
+         "size_bytes": size_bytes, "extracted_text": extracted_text, "created_at": now},
+        include_text=True,
+    )
+
+
+def db_list_documents() -> list[dict]:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, filename, content_type, size_bytes, extracted_text, created_at "
+            "FROM documents ORDER BY created_at DESC"
+        ).fetchall()
+    return [_document_to_public(dict(r)) for r in rows]
+
+
+def db_get_document(doc_id: str) -> Optional[dict]:
+    with _get_conn() as conn:
+        row = conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone()
+    return _document_to_public(dict(row), include_text=True) if row else None
+
+
+def db_delete_document(doc_id: str) -> bool:
+    with _get_conn() as conn:
+        row = conn.execute("SELECT id FROM documents WHERE id = ?", (doc_id,)).fetchone()
+        if row is None:
+            return False
+        conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+    # Remove the stored file directory (best-effort).
+    shutil.rmtree(os.path.join(UPLOADS_DIR, doc_id), ignore_errors=True)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Lifespan — init DB once on startup
 # ---------------------------------------------------------------------------
 
@@ -361,6 +612,25 @@ class UpdateProviderRequest(BaseModel):
     base_url: Optional[str] = None
     model: Optional[str] = None
     api_key: Optional[str] = None
+
+
+class CreateNoteRequest(BaseModel):
+    title: str = ""
+    content: str = ""
+
+
+class UpdateNoteRequest(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+
+class CreateTaskRequest(BaseModel):
+    title: str
+
+
+class UpdateTaskRequest(BaseModel):
+    title: Optional[str] = None
+    done: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +721,148 @@ def get_active_provider():
     if raw is None:
         return {"active": None}
     return {"active": _provider_to_public(raw)}
+
+
+# ---------------------------------------------------------------------------
+# Notes routes
+# ---------------------------------------------------------------------------
+
+@app.get("/notes")
+def list_notes():
+    """List all notes ordered by updated_at descending."""
+    return db_list_notes()
+
+
+@app.post("/notes")
+def create_note(body: CreateNoteRequest):
+    """Create a new note."""
+    return db_create_note(title=body.title, content=body.content)
+
+
+@app.get("/notes/{note_id}")
+def get_note(note_id: str):
+    """Get a single note by id."""
+    note = db_get_note(note_id)
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return note
+
+
+@app.put("/notes/{note_id}")
+def update_note(note_id: str, body: UpdateNoteRequest):
+    """Partially update a note's title and/or content."""
+    result = db_update_note(note_id=note_id, title=body.title, content=body.content)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return result
+
+
+@app.delete("/notes/{note_id}")
+def delete_note(note_id: str):
+    """Delete a note."""
+    deleted = db_delete_note(note_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Tasks routes
+# ---------------------------------------------------------------------------
+
+@app.get("/tasks")
+def list_tasks():
+    """List all tasks ordered by created_at descending."""
+    return db_list_tasks()
+
+
+@app.post("/tasks")
+def create_task(body: CreateTaskRequest):
+    """Create a new task."""
+    return db_create_task(title=body.title)
+
+
+@app.get("/tasks/{task_id}")
+def get_task(task_id: str):
+    """Get a single task by id."""
+    task = db_get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@app.put("/tasks/{task_id}")
+def update_task(task_id: str, body: UpdateTaskRequest):
+    """Partially update a task's title and/or done status."""
+    result = db_update_task(task_id=task_id, title=body.title, done=body.done)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return result
+
+
+@app.delete("/tasks/{task_id}")
+def delete_task(task_id: str):
+    """Delete a task."""
+    deleted = db_delete_task(task_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Documents routes
+# ---------------------------------------------------------------------------
+
+@app.post("/documents")
+async def upload_document(file: UploadFile = File(...)):
+    """Upload a file: store under data/uploads/, extract text, persist metadata."""
+    raw = await file.read()
+    if len(raw) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 25 MB)")
+
+    safe_name = _safe_filename(file.filename or "file")
+    doc_id = str(uuid.uuid4())
+    _ensure_uploads_dir()
+    doc_dir = os.path.join(UPLOADS_DIR, doc_id)
+    os.makedirs(doc_dir, exist_ok=True)
+    dest = os.path.join(doc_dir, safe_name)
+    with open(dest, "wb") as f:
+        f.write(raw)
+
+    extracted = _extract_text(dest, safe_name)
+    return db_create_document(
+        doc_id=doc_id,
+        filename=safe_name,
+        content_type=file.content_type or "",
+        size_bytes=len(raw),
+        extracted_text=extracted,
+    )
+
+
+@app.get("/documents")
+def list_documents():
+    """List uploaded documents (metadata only, no full extracted text)."""
+    return db_list_documents()
+
+
+@app.get("/documents/{document_id}")
+def get_document(document_id: str):
+    """Get a single document including its extracted text."""
+    doc = db_get_document(document_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return doc
+
+
+@app.delete("/documents/{document_id}")
+def delete_document(document_id: str):
+    """Delete a document row and its stored file."""
+    deleted = db_delete_document(document_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

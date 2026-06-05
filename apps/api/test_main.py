@@ -359,3 +359,280 @@ def test_api_key_never_returned_in_full():
 
     # Clean up
     client.delete(f"/providers/{pid}")
+
+
+# ---------------------------------------------------------------------------
+# Tests — Phase 2b: Notes CRUD
+# ---------------------------------------------------------------------------
+
+
+def test_notes_create_list_get_update_delete():
+    """Full CRUD round-trip for notes."""
+    # Create
+    resp = client.post("/notes", json={"title": "My First Note", "content": "Hello world"})
+    assert resp.status_code == 200
+    note = resp.json()
+    nid = note["id"]
+    assert note["title"] == "My First Note"
+    assert note["content"] == "Hello world"
+    assert "created_at" in note
+    assert "updated_at" in note
+
+    # List — should contain our new note
+    list_resp = client.get("/notes")
+    assert list_resp.status_code == 200
+    ids = [n["id"] for n in list_resp.json()]
+    assert nid in ids
+
+    # Get single note
+    get_resp = client.get(f"/notes/{nid}")
+    assert get_resp.status_code == 200
+    fetched = get_resp.json()
+    assert fetched["id"] == nid
+    assert fetched["title"] == "My First Note"
+    assert fetched["content"] == "Hello world"
+
+    # Update title only (partial update)
+    upd_resp = client.put(f"/notes/{nid}", json={"title": "Updated Title"})
+    assert upd_resp.status_code == 200
+    updated = upd_resp.json()
+    assert updated["title"] == "Updated Title"
+    assert updated["content"] == "Hello world"  # unchanged
+
+    # Update content only
+    upd2_resp = client.put(f"/notes/{nid}", json={"content": "New content"})
+    assert upd2_resp.status_code == 200
+    updated2 = upd2_resp.json()
+    assert updated2["title"] == "Updated Title"
+    assert updated2["content"] == "New content"
+
+    # Delete
+    del_resp = client.delete(f"/notes/{nid}")
+    assert del_resp.status_code == 200
+    assert del_resp.json()["ok"] is True
+
+    # Confirm gone
+    get_after = client.get(f"/notes/{nid}")
+    assert get_after.status_code == 404
+
+    ids_after = [n["id"] for n in client.get("/notes").json()]
+    assert nid not in ids_after
+
+
+def test_notes_not_found():
+    """404 on get/update/delete of non-existent note."""
+    resp = client.get("/notes/no-such-id")
+    assert resp.status_code == 404
+
+    resp2 = client.put("/notes/no-such-id", json={"title": "x"})
+    assert resp2.status_code == 404
+
+    resp3 = client.delete("/notes/no-such-id")
+    assert resp3.status_code == 404
+
+
+def test_notes_empty_fields_allowed():
+    """Notes can be created with empty title and content (blank note)."""
+    resp = client.post("/notes", json={})
+    assert resp.status_code == 200
+    note = resp.json()
+    assert note["title"] == ""
+    assert note["content"] == ""
+    # Clean up
+    client.delete(f"/notes/{note['id']}")
+
+
+# ---------------------------------------------------------------------------
+# Tests — Phase 2b: Tasks CRUD + done toggle
+# ---------------------------------------------------------------------------
+
+
+def test_tasks_create_list_toggle_delete():
+    """Full CRUD round-trip for tasks including done/undone toggle."""
+    # Create
+    resp = client.post("/tasks", json={"title": "Buy groceries"})
+    assert resp.status_code == 200
+    task = resp.json()
+    tid = task["id"]
+    assert task["title"] == "Buy groceries"
+    assert task["done"] is False
+    assert "created_at" in task
+    assert "updated_at" in task
+
+    # List — should contain our new task
+    list_resp = client.get("/tasks")
+    assert list_resp.status_code == 200
+    ids = [t["id"] for t in list_resp.json()]
+    assert tid in ids
+
+    # Get single task
+    get_resp = client.get(f"/tasks/{tid}")
+    assert get_resp.status_code == 200
+    fetched = get_resp.json()
+    assert fetched["id"] == tid
+    assert fetched["done"] is False
+
+    # Toggle done = True
+    toggle_resp = client.put(f"/tasks/{tid}", json={"done": True})
+    assert toggle_resp.status_code == 200
+    toggled = toggle_resp.json()
+    assert toggled["done"] is True
+    assert toggled["title"] == "Buy groceries"  # unchanged
+
+    # Toggle done = False (undone)
+    toggle2_resp = client.put(f"/tasks/{tid}", json={"done": False})
+    assert toggle2_resp.status_code == 200
+    toggled2 = toggle2_resp.json()
+    assert toggled2["done"] is False
+
+    # Update title
+    upd_resp = client.put(f"/tasks/{tid}", json={"title": "Buy organic groceries"})
+    assert upd_resp.status_code == 200
+    updated = upd_resp.json()
+    assert updated["title"] == "Buy organic groceries"
+    assert updated["done"] is False  # unchanged
+
+    # Delete
+    del_resp = client.delete(f"/tasks/{tid}")
+    assert del_resp.status_code == 200
+    assert del_resp.json()["ok"] is True
+
+    # Confirm gone
+    get_after = client.get(f"/tasks/{tid}")
+    assert get_after.status_code == 404
+
+    ids_after = [t["id"] for t in client.get("/tasks").json()]
+    assert tid not in ids_after
+
+
+def test_tasks_not_found():
+    """404 on get/update/delete of non-existent task."""
+    resp = client.get("/tasks/no-such-id")
+    assert resp.status_code == 404
+
+    resp2 = client.put("/tasks/no-such-id", json={"done": True})
+    assert resp2.status_code == 404
+
+    resp3 = client.delete("/tasks/no-such-id")
+    assert resp3.status_code == 404
+
+
+def test_tasks_done_field_is_boolean():
+    """Ensure done field is always serialized as boolean, not integer."""
+    resp = client.post("/tasks", json={"title": "Type-check task"})
+    assert resp.status_code == 200
+    task = resp.json()
+    tid = task["id"]
+    assert task["done"] is False  # must be bool False, not 0
+
+    toggled = client.put(f"/tasks/{tid}", json={"done": True}).json()
+    assert toggled["done"] is True  # must be bool True, not 1
+
+    # Verify via list too
+    tasks_list = client.get("/tasks").json()
+    matching = [t for t in tasks_list if t["id"] == tid]
+    assert len(matching) == 1
+    assert matching[0]["done"] is True
+
+    # Clean up
+    client.delete(f"/tasks/{tid}")
+
+
+# ---------------------------------------------------------------------------
+# Tests — Phase 2c: Documents (upload + text extraction)
+# ---------------------------------------------------------------------------
+
+
+def test_documents_upload_list_get_delete_text():
+    """Upload a .txt, list it, fetch extracted text, then delete it."""
+    content = b"Hello from a Lantern text file.\nSecond line."
+    resp = client.post("/documents", files={"file": ("note.txt", content, "text/plain")})
+    assert resp.status_code == 200
+    doc = resp.json()
+    assert doc["filename"] == "note.txt"
+    assert doc["size_bytes"] == len(content)
+    assert doc["has_text"] is True
+    assert "Lantern text file" in doc["extracted_text"]
+    doc_id = doc["id"]
+
+    # List returns metadata only (no full text field)
+    listed = client.get("/documents").json()
+    match = [d for d in listed if d["id"] == doc_id]
+    assert len(match) == 1
+    assert "extracted_text" not in match[0]
+    assert match[0]["has_text"] is True
+
+    # Get returns the extracted text
+    got = client.get(f"/documents/{doc_id}").json()
+    assert "Second line." in got["extracted_text"]
+
+    # Delete, then 404
+    assert client.delete(f"/documents/{doc_id}").status_code == 200
+    assert client.get(f"/documents/{doc_id}").status_code == 404
+
+
+def test_documents_markdown_extraction():
+    md = b"# Heading\n\nSome **markdown** body text."
+    doc = client.post("/documents", files={"file": ("readme.md", md, "text/markdown")}).json()
+    assert doc["has_text"] is True
+    assert "Heading" in doc["extracted_text"]
+    client.delete(f"/documents/{doc['id']}")
+
+
+def test_documents_docx_extraction():
+    """python-docx round-trip: build a .docx in memory, upload, extract its text."""
+    import io
+    import docx
+
+    buf = io.BytesIO()
+    document = docx.Document()
+    document.add_paragraph("Hello from a docx paragraph.")
+    document.add_paragraph("Lantern second paragraph.")
+    document.save(buf)
+    buf.seek(0)
+
+    doc = client.post(
+        "/documents",
+        files={"file": (
+            "report.docx",
+            buf.read(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )},
+    ).json()
+    assert doc["has_text"] is True
+    assert "Hello from a docx paragraph." in doc["extracted_text"]
+    assert "Lantern second paragraph." in doc["extracted_text"]
+    client.delete(f"/documents/{doc['id']}")
+
+
+def test_documents_pdf_upload_is_robust():
+    """A .pdf uploads/lists/deletes without crashing even if extraction yields nothing."""
+    pdf_bytes = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF"
+    resp = client.post("/documents", files={"file": ("doc.pdf", pdf_bytes, "application/pdf")})
+    assert resp.status_code == 200
+    doc = resp.json()
+    assert doc["filename"] == "doc.pdf"
+    assert isinstance(doc["has_text"], bool)  # extraction never raises, always a bool
+    assert client.delete(f"/documents/{doc['id']}").status_code == 200
+
+
+def test_documents_filename_is_sanitized():
+    """Path-traversal filenames are reduced to a safe basename."""
+    doc = client.post(
+        "/documents",
+        files={"file": ("../../etc/evil.txt", b"x", "text/plain")},
+    ).json()
+    assert "/" not in doc["filename"]
+    assert ".." not in doc["filename"]
+    assert doc["filename"] == "evil.txt"
+    client.delete(f"/documents/{doc['id']}")
+
+
+def test_documents_not_found():
+    assert client.get("/documents/nonexistent-id").status_code == 404
+    assert client.delete("/documents/nonexistent-id").status_code == 404
+
+
+def test_documents_empty_file_rejected():
+    resp = client.post("/documents", files={"file": ("empty.txt", b"", "text/plain")})
+    assert resp.status_code == 400

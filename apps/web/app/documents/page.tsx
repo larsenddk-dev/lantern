@@ -1,17 +1,227 @@
-import { FileText } from "lucide-react";
+"use client";
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { FileText, Upload, Trash2, X, FileCheck2, FileX2 } from "lucide-react";
+import { api } from "@/lib/api";
+import type { DocumentMeta, DocumentDetail } from "@/lib/types";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DocumentsPage
+// ---------------------------------------------------------------------------
 
 export default function DocumentsPage() {
+  const [docs, setDocs] = useState<DocumentMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<DocumentDetail | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setDocs(await api.listDocuments());
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load documents");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setError(null);
+    try {
+      // Upload sequentially so each failure is attributable.
+      for (const file of Array.from(files)) {
+        await api.uploadDocument(file);
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function openDocument(id: string) {
+    try {
+      setSelected(await api.getDocument(id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to open document");
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await api.deleteDocument(id);
+      if (selected?.id === id) setSelected(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    }
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-      <FileText size={48} style={{ color: "var(--muted-foreground)" }} aria-hidden="true" />
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold mb-2">Documents</h1>
-        <p style={{ color: "var(--muted-foreground)" }} className="text-sm max-w-sm">
-          Upload, read, and chat with your documents. Coming in a later phase.
-        </p>
-        <span className="inline-block mt-3 px-3 py-1 rounded-full text-xs font-medium" style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
-          Coming soon
-        </span>
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <header
+        className="flex items-center justify-between px-6 py-4 shrink-0"
+        style={{ borderBottom: "1px solid var(--border)" }}
+      >
+        <div className="flex items-center gap-2">
+          <FileText size={18} aria-hidden="true" />
+          <h1 className="text-sm font-semibold">Documents</h1>
+        </div>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-opacity disabled:opacity-40"
+          style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+        >
+          <Upload size={14} aria-hidden="true" />
+          {uploading ? "Uploading…" : "Upload"}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+      </header>
+
+      {error && (
+        <div
+          className="mx-6 mt-4 px-3 py-2 rounded-md text-xs"
+          style={{ background: "var(--destructive, #fee)", color: "var(--destructive-foreground, #900)" }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div className="flex flex-1 min-h-0">
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>Loading…</p>
+          ) : docs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+              <FileText size={40} style={{ color: "var(--muted-foreground)" }} aria-hidden="true" />
+              <div>
+                <p className="text-sm font-medium">No documents yet</p>
+                <p className="text-xs mt-1 max-w-xs" style={{ color: "var(--muted-foreground)" }}>
+                  Upload a .txt, .md, .pdf or .docx file. Lantern extracts the text so you can read it here.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {docs.map((doc) => (
+                <li
+                  key={doc.id}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-md border transition-colors"
+                  style={{
+                    borderColor: "var(--border)",
+                    background: selected?.id === doc.id ? "var(--muted)" : "transparent",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => openDocument(doc.id)}
+                    className="flex items-center gap-3 flex-1 text-left min-w-0"
+                  >
+                    {doc.has_text ? (
+                      <FileCheck2 size={18} className="shrink-0" style={{ color: "var(--primary)" }} aria-hidden="true" />
+                    ) : (
+                      <FileX2 size={18} className="shrink-0" style={{ color: "var(--muted-foreground)" }} aria-hidden="true" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.filename}</p>
+                      <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+                        {formatBytes(doc.size_bytes)} · {formatDate(doc.created_at)}
+                        {!doc.has_text && " · no text extracted"}
+                      </p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(doc.id)}
+                    aria-label={`Delete ${doc.filename}`}
+                    className="p-1.5 rounded-md transition-opacity hover:opacity-70"
+                    style={{ color: "var(--muted-foreground)" }}
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Detail panel */}
+        {selected && (
+          <aside
+            className="w-1/2 max-w-2xl overflow-y-auto p-6 shrink-0"
+            style={{ borderLeft: "1px solid var(--border)" }}
+          >
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold truncate">{selected.filename}</h2>
+                <p className="text-xs mt-0.5" style={{ color: "var(--muted-foreground)" }}>
+                  {selected.content_type || "unknown type"} · {formatBytes(selected.size_bytes)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                aria-label="Close"
+                className="p-1.5 rounded-md hover:opacity-70"
+                style={{ color: "var(--muted-foreground)" }}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            {selected.extracted_text.trim() ? (
+              <pre
+                className="text-xs whitespace-pre-wrap break-words font-sans leading-relaxed"
+                style={{ color: "var(--foreground)" }}
+              >
+                {selected.extracted_text}
+              </pre>
+            ) : (
+              <p className="text-xs italic" style={{ color: "var(--muted-foreground)" }}>
+                No text could be extracted from this file (it may be a scanned image,
+                an unsupported type, or empty).
+              </p>
+            )}
+          </aside>
+        )}
       </div>
     </div>
   );
