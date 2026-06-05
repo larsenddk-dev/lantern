@@ -1,0 +1,46 @@
+# --- Node / Next.js (frontend) ---
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+.turbo/
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# --- Python / FastAPI (backend) ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Env & secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Data / runtime (self-hosted user data — never commit) ---
+data/
+uploads/
+logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Note: Nogra runtime noise is ignored by .nogra/.gitignore (kept local).
