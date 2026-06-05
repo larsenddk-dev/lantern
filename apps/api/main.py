@@ -5,6 +5,7 @@ import json
 import sqlite3
 import uuid
 import time
+import math
 import shutil
 from contextlib import asynccontextmanager
 
@@ -23,6 +24,7 @@ LANTERN_OPENAI_BASE_URL = os.environ.get(
 )
 LANTERN_OPENAI_API_KEY = os.environ.get("LANTERN_OPENAI_API_KEY", "")
 LANTERN_MODEL = os.environ.get("LANTERN_MODEL", "openai/gpt-4o-mini")
+LANTERN_EMBED_MODEL = os.environ.get("LANTERN_EMBED_MODEL", "text-embedding-3-small")
 LANTERN_WEB_ORIGIN = os.environ.get("LANTERN_WEB_ORIGIN", "http://localhost:3000")
 
 # ---------------------------------------------------------------------------
@@ -123,6 +125,17 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS embeddings (
+                id TEXT PRIMARY KEY,
+                source_type TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL DEFAULT 0,
+                content TEXT NOT NULL,
+                vector TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);
             """
         )
 
@@ -637,6 +650,169 @@ def db_delete_memory(mem_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# RAG — embeddings + semantic retrieval over memories and documents
+# ---------------------------------------------------------------------------
+
+def embed_texts(texts: list[str], *, base_url: Optional[str] = None,
+                api_key: Optional[str] = None, model: Optional[str] = None) -> list[list[float]]:
+    """Return one embedding vector per input text via an OpenAI-compatible
+    /embeddings endpoint. Resolves base_url/api_key from the active provider (or
+    env) and the embedding model from LANTERN_EMBED_MODEL. Raises on failure;
+    callers decide how to degrade. Monkeypatched in tests for offline runs."""
+    if not texts:
+        return []
+    b, k, _m = db_resolve_provider()
+    base = (base_url or b).rstrip("/")
+    key = api_key or k
+    mdl = model or LANTERN_EMBED_MODEL
+    resp = httpx.post(
+        base + "/embeddings",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json={"model": mdl, "input": texts},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return [item["embedding"] for item in resp.json()["data"]]
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    if not a or not b:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def _chunk_text(text: str, size: int = 1000) -> list[str]:
+    text = (text or "").strip()
+    if not text:
+        return []
+    return [text[i:i + size] for i in range(0, len(text), size)]
+
+
+def _embedding_count() -> int:
+    with _get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) AS n FROM embeddings").fetchone()["n"]
+
+
+def db_clear_embeddings(source_type: str, source_id: str) -> None:
+    with _get_conn() as conn:
+        conn.execute(
+            "DELETE FROM embeddings WHERE source_type = ? AND source_id = ?",
+            (source_type, source_id),
+        )
+
+
+def db_store_embedding(source_type: str, source_id: str, chunk_index: int,
+                       content: str, vector: list[float]) -> None:
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT INTO embeddings (id, source_type, source_id, chunk_index, content, vector, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), source_type, source_id, chunk_index, content,
+             json.dumps(vector), _now_iso()),
+        )
+
+
+def db_embedded_source_ids(source_type: str) -> set:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT source_id FROM embeddings WHERE source_type = ?",
+            (source_type,),
+        ).fetchall()
+    return {r["source_id"] for r in rows}
+
+
+def db_all_embeddings() -> list[dict]:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT source_type, source_id, content, vector FROM embeddings"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def rag_reindex(force: bool = False) -> dict:
+    """Embed memories + document text that are not yet embedded (or all, if
+    force=True). Returns how many chunks were indexed and the new total."""
+    to_embed: list[tuple] = []  # (source_type, source_id, chunk_index, content)
+
+    mem_done = set() if force else db_embedded_source_ids("memory")
+    for m in db_list_memories():
+        if force or m["id"] not in mem_done:
+            if force:
+                db_clear_embeddings("memory", m["id"])
+            if m["content"].strip():
+                to_embed.append(("memory", m["id"], 0, m["content"]))
+
+    doc_done = set() if force else db_embedded_source_ids("document")
+    for d in db_list_documents():
+        if force or d["id"] not in doc_done:
+            if force:
+                db_clear_embeddings("document", d["id"])
+            detail = db_get_document(d["id"])
+            for i, ch in enumerate(_chunk_text(detail["extracted_text"]) if detail else []):
+                to_embed.append(("document", d["id"], i, ch))
+
+    if not to_embed:
+        return {"indexed": 0, "total": _embedding_count()}
+
+    vectors = embed_texts([t[3] for t in to_embed])
+    for (st, sid, ci, content), vec in zip(to_embed, vectors):
+        db_store_embedding(st, sid, ci, content, vec)
+    return {"indexed": len(to_embed), "total": _embedding_count()}
+
+
+def rag_search(query: str, k: int = 5) -> list[dict]:
+    """Return the top-k stored chunks most similar to the query by cosine
+    similarity. Returns [] if nothing is indexed."""
+    rows = db_all_embeddings()
+    if not rows or not query.strip():
+        return []
+    qvec = embed_texts([query])[0]
+    scored = []
+    for r in rows:
+        try:
+            vec = json.loads(r["vector"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        scored.append({
+            "source_type": r["source_type"],
+            "source_id": r["source_id"],
+            "content": r["content"],
+            "score": _cosine(qvec, vec),
+        })
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:k]
+
+
+def build_chat_context(query: str, *, k: int = 5, min_score: float = 0.15) -> list[str]:
+    """Gather context lines for a chat turn: pinned memories (always, no
+    embedding needed) plus semantically retrieved chunks (best-effort)."""
+    lines: list[str] = []
+    seen = set()
+    try:
+        for m in db_list_memories():
+            if m["pinned"] and m["content"].strip():
+                lines.append(m["content"].strip())
+                seen.add(m["content"].strip())
+    except Exception:
+        pass
+    try:
+        for h in rag_search(query, k=k):
+            text = (h["content"] or "").strip()
+            if h["score"] >= min_score and text and text not in seen:
+                lines.append(text[:600])
+                seen.add(text)
+    except Exception:
+        # No embedding provider / network — degrade to pinned memories only.
+        pass
+    return lines
+
+
+# ---------------------------------------------------------------------------
 # Lifespan — init DB once on startup
 # ---------------------------------------------------------------------------
 
@@ -673,6 +849,12 @@ class ChatRequest(BaseModel):
     message: str
     provider_id: Optional[str] = None
     model: Optional[str] = None
+    use_context: bool = True
+
+
+class RagSearchRequest(BaseModel):
+    query: str
+    k: int = 5
 
 
 class CreateProviderRequest(BaseModel):
@@ -992,6 +1174,28 @@ def delete_memory(memory_id: str):
 
 
 # ---------------------------------------------------------------------------
+# RAG routes — index + semantic search over memories and documents
+# ---------------------------------------------------------------------------
+
+@app.get("/rag/status")
+def rag_status():
+    """How many chunks are currently embedded."""
+    return {"embeddings": _embedding_count()}
+
+
+@app.post("/rag/index")
+def rag_index(force: bool = False):
+    """Embed memories + documents not yet indexed (or re-embed all if force)."""
+    return rag_reindex(force=force)
+
+
+@app.post("/rag/search")
+def rag_search_route(body: RagSearchRequest):
+    """Return the top-k stored chunks most similar to the query."""
+    return rag_search(body.query, k=body.k)
+
+
+# ---------------------------------------------------------------------------
 # Chat route
 # ---------------------------------------------------------------------------
 
@@ -1017,6 +1221,19 @@ async def chat(body: ChatRequest):
         {"role": m["role"], "content": m["content"]}
         for m in session["messages"]
     ]
+
+    # RAG: inject pinned memories + semantically relevant context as a system
+    # message. Degrades gracefully (pinned-only, or nothing) if no embeddings.
+    if body.use_context:
+        context_lines = build_chat_context(body.message)
+        if context_lines:
+            context = (
+                "Use the following context the user has saved when relevant. "
+                "If it is not relevant, ignore it.\n"
+                + "\n".join(f"- {line}" for line in context_lines)
+            )
+            history.insert(0, {"role": "system", "content": context})
+
     history.append({"role": "user", "content": body.message})
 
     async def generate():

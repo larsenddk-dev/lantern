@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Brain, Plus, Trash2, Pin, PinOff } from "lucide-react";
+import { Brain, Plus, Trash2, Pin, PinOff, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Memory } from "@/lib/types";
 
@@ -11,6 +11,8 @@ export default function MemoryPage() {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [indexed, setIndexed] = useState<number | null>(null);
+  const [indexing, setIndexing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -23,9 +25,35 @@ export default function MemoryPage() {
     }
   }, []);
 
+  const loadStatus = useCallback(async () => {
+    try {
+      setIndexed((await api.ragStatus()).embeddings);
+    } catch {
+      /* status is best-effort */
+    }
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadStatus();
+  }, [load, loadStatus]);
+
+  async function handleReindex() {
+    setIndexing(true);
+    setError(null);
+    try {
+      await api.ragIndex();
+      await loadStatus();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? `Indexing failed (needs an embedding provider): ${e.message}`
+          : "Indexing failed",
+      );
+    } finally {
+      setIndexing(false);
+    }
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -73,6 +101,24 @@ export default function MemoryPage() {
         <span className="text-xs ml-2" style={{ color: "var(--muted-foreground)" }}>
           Facts your assistant keeps across sessions
         </span>
+        <div className="ml-auto flex items-center gap-3">
+          {indexed !== null && (
+            <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+              {indexed} chunk{indexed === 1 ? "" : "s"} indexed for chat
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleReindex}
+            disabled={indexing}
+            title="Embed memories & documents so chat can retrieve them (needs an embedding provider)"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-opacity disabled:opacity-40"
+            style={{ borderColor: "var(--border)", color: "var(--foreground)" }}
+          >
+            <RefreshCw size={13} aria-hidden="true" className={indexing ? "animate-spin" : ""} />
+            {indexing ? "Indexing…" : "Re-index"}
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-6 max-w-2xl w-full mx-auto">

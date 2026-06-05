@@ -266,6 +266,28 @@ export const api = {
   deleteMemory(id: string): Promise<{ ok: boolean }> {
     return request(`/memories/${id}`, { method: "DELETE" });
   },
+
+  // ---------------------------------------------------------------------------
+  // RAG API helpers (embeddings + retrieval)
+  // ---------------------------------------------------------------------------
+
+  ragStatus(): Promise<{ embeddings: number }> {
+    return request("/rag/status");
+  },
+
+  ragIndex(): Promise<{ indexed: number; total: number }> {
+    return request("/rag/index", { method: "POST" });
+  },
+
+  ragSearch(query: string, k = 5): Promise<
+    { source_type: string; source_id: string; content: string; score: number }[]
+  > {
+    return request("/rag/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, k }),
+    });
+  },
 };
 
 export type {

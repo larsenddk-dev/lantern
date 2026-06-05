@@ -682,3 +682,80 @@ def test_memories_not_found():
     assert client.get("/memories/nope").status_code == 404
     assert client.put("/memories/nope", json={"content": "x"}).status_code == 404
     assert client.delete("/memories/nope").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Tests — RAG (embeddings + retrieval), offline with a deterministic stub
+# ---------------------------------------------------------------------------
+
+
+def _stub_embed(texts, **_kwargs):
+    """Deterministic bag-of-words hashing embedder — no network, no secrets.
+    Shared words → overlapping dimensions → higher cosine similarity."""
+    import hashlib
+
+    dim = 96
+    vectors = []
+    for t in texts:
+        v = [0.0] * dim
+        for tok in t.lower().split():
+            h = int(hashlib.md5(tok.encode()).hexdigest(), 16)
+            v[h % dim] += 1.0
+        vectors.append(v)
+    return vectors
+
+
+def test_rag_index_and_search(monkeypatch):
+    monkeypatch.setattr(main, "embed_texts", _stub_embed)
+    m1 = client.post("/memories", json={"content": "The user's favorite programming language is Rust"}).json()
+    m2 = client.post("/memories", json={"content": "The user has a golden retriever named Biscuit"}).json()
+
+    idx = client.post("/rag/index").json()
+    assert idx["total"] >= 2
+
+    results = client.post("/rag/search", json={"query": "favorite programming language", "k": 3}).json()
+    assert len(results) >= 1
+    assert "Rust" in results[0]["content"]  # most relevant chunk ranks first
+
+    client.delete(f"/memories/{m1['id']}")
+    client.delete(f"/memories/{m2['id']}")
+
+
+def test_chat_injects_pinned_memory_context(monkeypatch):
+    captured = {}
+
+    async def _capture_stream(messages, **_kwargs):
+        captured["messages"] = messages
+        yield "ok"
+
+    monkeypatch.setattr(main, "stream_chat_completion", _capture_stream)
+    monkeypatch.setattr(main, "embed_texts", _stub_embed)
+
+    mem = client.post("/memories", json={"content": "ALWAYS reply in French", "pinned": True}).json()
+    sess = client.post("/sessions", json={"title": "ctx"}).json()
+    with client.stream("POST", "/chat", json={"session_id": sess["id"], "message": "hello"}) as resp:
+        assert resp.status_code == 200
+        b"".join(resp.iter_bytes())
+
+    msgs = captured["messages"]
+    assert any(m["role"] == "system" and "French" in m["content"] for m in msgs)
+    client.delete(f"/memories/{mem['id']}")
+
+
+def test_chat_use_context_false_skips_injection(monkeypatch):
+    captured = {}
+
+    async def _capture_stream(messages, **_kwargs):
+        captured["messages"] = messages
+        yield "ok"
+
+    monkeypatch.setattr(main, "stream_chat_completion", _capture_stream)
+    mem = client.post("/memories", json={"content": "SECRET PHRASE xyzzy", "pinned": True}).json()
+    sess = client.post("/sessions", json={"title": "noctx"}).json()
+    with client.stream("POST", "/chat",
+                       json={"session_id": sess["id"], "message": "hi", "use_context": False}) as resp:
+        b"".join(resp.iter_bytes())
+
+    msgs = captured["messages"]
+    assert not any("xyzzy" in m["content"] for m in msgs)
+    client.delete(f"/memories/{mem['id']}")
