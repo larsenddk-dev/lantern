@@ -797,3 +797,52 @@ def test_compare_captures_per_target_errors(monkeypatch):
     assert len(resp["results"]) == 1
     assert resp["results"][0]["error"] is not None
     assert resp["results"][0]["reply"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Tests — Agent (tool-calling loop), offline stub
+# ---------------------------------------------------------------------------
+
+
+def test_agent_calls_tool_then_answers(monkeypatch):
+    calls = {"n": 0}
+
+    def _stub_tools(messages, tools, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "calculator", "arguments": '{"expression": "2 + 3 * 4"}'},
+                }],
+            }
+        return {"role": "assistant", "content": "The answer is 14."}
+
+    monkeypatch.setattr(main, "chat_with_tools", _stub_tools)
+    resp = client.post("/agent", json={"message": "what is 2 + 3 * 4?"}).json()
+    assert "14" in resp["reply"]
+    assert any(s["tool"] == "calculator" for s in resp["steps"])
+    assert resp["steps"][0]["result"] == "14"
+
+
+def test_agent_answers_without_tools(monkeypatch):
+    def _stub_tools(messages, tools, **_kwargs):
+        return {"role": "assistant", "content": "Hello there."}
+
+    monkeypatch.setattr(main, "chat_with_tools", _stub_tools)
+    resp = client.post("/agent", json={"message": "hi"}).json()
+    assert resp["reply"] == "Hello there."
+    assert resp["steps"] == []
+
+
+def test_safe_eval_rejects_non_arithmetic():
+    import pytest as _pytest
+    assert main._safe_eval("2 + 3 * 4") == 14
+    assert main._safe_eval("-(5) + 2 ** 3") == 3
+    with _pytest.raises(Exception):
+        main._safe_eval("__import__('os').system('echo hi')")
+    with _pytest.raises(Exception):
+        main._safe_eval("open('/etc/passwd')")

@@ -24,6 +24,8 @@ import type {
   UpdateMemoryPayload,
   CompareTarget,
   CompareResult,
+  AgentResponse,
+  AgentStep,
 } from "./types";
 
 const BASE_URL =
@@ -302,6 +304,18 @@ export const api = {
       body: JSON.stringify({ message, targets }),
     });
   },
+
+  // ---------------------------------------------------------------------------
+  // Agent API helper (tool-calling loop)
+  // ---------------------------------------------------------------------------
+
+  runAgent(message: string, maxSteps = 5): Promise<AgentResponse> {
+    return request("/agent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, max_steps: maxSteps }),
+    });
+  },
 };
 
 export type {
@@ -312,4 +326,5 @@ export type {
   DocumentMeta, DocumentDetail,
   Memory, CreateMemoryPayload, UpdateMemoryPayload,
   CompareTarget, CompareResult,
+  AgentResponse, AgentStep,
 };

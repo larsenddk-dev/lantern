@@ -153,3 +153,18 @@ export interface CompareResult {
   reply: string;
   error: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Agent types
+// ---------------------------------------------------------------------------
+
+export interface AgentStep {
+  tool: string;
+  args: Record<string, unknown>;
+  result: string;
+}
+
+export interface AgentResponse {
+  reply: string;
+  steps: AgentStep[];
+}

@@ -7,6 +7,8 @@ import uuid
 import time
 import math
 import shutil
+import ast
+import operator
 from contextlib import asynccontextmanager
 
 import httpx
@@ -458,6 +460,22 @@ def complete_chat_once(messages: list[dict], *, base_url: str, api_key: str, mod
     return resp.json()["choices"][0]["message"]["content"]
 
 
+def chat_with_tools(messages: list[dict], tools: list[dict], *,
+                    base_url: str, api_key: str, model: str) -> dict:
+    """One OpenAI-compatible chat-completions call with tools. Returns the raw
+    assistant message dict (which may include tool_calls). Stubbed in tests."""
+    url = base_url.rstrip("/") + "/chat/completions"
+    resp = httpx.post(
+        url,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={"model": model, "messages": messages, "tools": tools,
+              "tool_choice": "auto", "stream": False},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]
+
+
 async def stream_chat_completion(
     messages: list[dict],
     *,
@@ -827,6 +845,134 @@ def build_chat_context(query: str, *, k: int = 5, min_score: float = 0.15) -> li
 
 
 # ---------------------------------------------------------------------------
+# Agent — a tool-calling loop over safe, local tools
+# ---------------------------------------------------------------------------
+
+AGENT_SYSTEM = (
+    "You are Lantern's agent. You can call tools to look up the user's saved "
+    "knowledge (memories and documents), list their notes and tasks, and do "
+    "arithmetic. Use tools when they help; then answer concisely."
+)
+
+AGENT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge",
+            "description": "Semantic search over the user's saved memories and documents.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "What to look for"}},
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_tasks",
+            "description": "List the user's tasks and whether each is done.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_notes",
+            "description": "List the titles of the user's notes.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculator",
+            "description": "Evaluate a basic arithmetic expression (+ - * / ** %).",
+            "parameters": {
+                "type": "object",
+                "properties": {"expression": {"type": "string"}},
+                "required": ["expression"],
+            },
+        },
+    },
+]
+
+_SAFE_OPS = {
+    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+    ast.Div: operator.truediv, ast.Pow: operator.pow, ast.Mod: operator.mod,
+    ast.USub: operator.neg, ast.UAdd: operator.pos, ast.FloorDiv: operator.floordiv,
+}
+
+
+def _safe_eval(expr: str):
+    """Evaluate a basic arithmetic expression safely (no names, calls, attrs)."""
+    def _ev(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_OPS:
+            return _SAFE_OPS[type(node.op)](_ev(node.left), _ev(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_OPS:
+            return _SAFE_OPS[type(node.op)](_ev(node.operand))
+        raise ValueError("unsupported expression")
+    return _ev(ast.parse(expr, mode="eval").body)
+
+
+def _run_agent_tool(name: str, args: dict) -> str:
+    """Execute a single tool call and return a string result."""
+    try:
+        if name == "search_knowledge":
+            hits = rag_search(args.get("query", ""), k=5)
+            if not hits:
+                pinned = [m["content"] for m in db_list_memories() if m["pinned"]]
+                return json.dumps({"pinned_memories": pinned, "results": []})
+            return json.dumps([
+                {"content": h["content"][:500], "score": round(h["score"], 3)} for h in hits
+            ])
+        if name == "list_tasks":
+            return json.dumps([
+                {"title": t["title"], "done": t["done"]} for t in db_list_tasks()
+            ])
+        if name == "list_notes":
+            return json.dumps([
+                {"id": n["id"], "title": n["title"]} for n in db_list_notes()
+            ])
+        if name == "calculator":
+            return str(_safe_eval(args.get("expression", "")))
+        return f"Unknown tool: {name}"
+    except Exception as e:
+        return f"tool error: {e}"
+
+
+def agent_run(message: str, *, max_steps: int = 5) -> dict:
+    """Run the agent loop: call the model with tools, execute any tool calls,
+    feed results back, repeat until a final answer or max_steps. Returns the
+    final reply plus the list of tool steps taken."""
+    base_url, api_key, model = db_resolve_provider()
+    messages = [
+        {"role": "system", "content": AGENT_SYSTEM},
+        {"role": "user", "content": message},
+    ]
+    steps: list[dict] = []
+    for _ in range(max_steps):
+        msg = chat_with_tools(messages, AGENT_TOOLS, base_url=base_url, api_key=api_key, model=model)
+        messages.append(msg)
+        tool_calls = msg.get("tool_calls")
+        if not tool_calls:
+            return {"reply": msg.get("content") or "", "steps": steps}
+        for tc in tool_calls:
+            fn = tc.get("function", {})
+            name = fn.get("name", "")
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            result = _run_agent_tool(name, args)
+            steps.append({"tool": name, "args": args, "result": result[:1000]})
+            messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": result})
+    return {"reply": "(agent stopped after reaching the step limit)", "steps": steps}
+
+
+# ---------------------------------------------------------------------------
 # Lifespan — init DB once on startup
 # ---------------------------------------------------------------------------
 
@@ -879,6 +1025,11 @@ class CompareTarget(BaseModel):
 class CompareRequest(BaseModel):
     message: str
     targets: list[CompareTarget] = []
+
+
+class AgentRequest(BaseModel):
+    message: str
+    max_steps: int = 5
 
 
 class CreateProviderRequest(BaseModel):
@@ -1241,6 +1392,17 @@ def compare(body: CompareRequest):
         except Exception as e:
             results.append({"model": model, "reply": "", "error": str(e)[:200]})
     return {"results": results}
+
+
+# ---------------------------------------------------------------------------
+# Agent route — tool-calling loop
+# ---------------------------------------------------------------------------
+
+@app.post("/agent")
+def agent(body: AgentRequest):
+    """Run the agent loop over the message and return the reply + tool steps."""
+    steps = max(1, min(body.max_steps, 8))
+    return agent_run(body.message, max_steps=steps)
 
 
 # ---------------------------------------------------------------------------
