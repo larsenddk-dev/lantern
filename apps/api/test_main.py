@@ -636,3 +636,49 @@ def test_documents_not_found():
 def test_documents_empty_file_rejected():
     resp = client.post("/documents", files={"file": ("empty.txt", b"", "text/plain")})
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Tests — Memory module
+# ---------------------------------------------------------------------------
+
+
+def test_memories_create_list_get_update_delete():
+    created = client.post("/memories", json={"content": "User prefers dark mode."}).json()
+    assert created["content"] == "User prefers dark mode."
+    assert created["pinned"] is False
+    mid = created["id"]
+
+    # Get
+    got = client.get(f"/memories/{mid}").json()
+    assert got["content"] == "User prefers dark mode."
+
+    # Update content + pin
+    upd = client.put(f"/memories/{mid}", json={"content": "User prefers light mode.", "pinned": True}).json()
+    assert upd["content"] == "User prefers light mode."
+    assert upd["pinned"] is True
+
+    # List contains it
+    listed = client.get("/memories").json()
+    assert any(m["id"] == mid for m in listed)
+
+    # Delete → 404
+    assert client.delete(f"/memories/{mid}").status_code == 200
+    assert client.get(f"/memories/{mid}").status_code == 404
+
+
+def test_memories_pinned_sorted_first():
+    a = client.post("/memories", json={"content": "unpinned A"}).json()
+    b = client.post("/memories", json={"content": "pinned B", "pinned": True}).json()
+    listed = client.get("/memories").json()
+    ids = [m["id"] for m in listed]
+    # Pinned item must come before the unpinned one
+    assert ids.index(b["id"]) < ids.index(a["id"])
+    client.delete(f"/memories/{a['id']}")
+    client.delete(f"/memories/{b['id']}")
+
+
+def test_memories_not_found():
+    assert client.get("/memories/nope").status_code == 404
+    assert client.put("/memories/nope", json={"content": "x"}).status_code == 404
+    assert client.delete("/memories/nope").status_code == 404

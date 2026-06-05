@@ -115,6 +115,14 @@ def init_db() -> None:
                 extracted_text TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS memories (
+                id TEXT PRIMARY KEY,
+                content TEXT NOT NULL DEFAULT '',
+                pinned INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             """
         )
 
@@ -562,6 +570,73 @@ def db_delete_document(doc_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Memory — remembered facts the assistant should keep across sessions
+# ---------------------------------------------------------------------------
+
+def _memory_to_public(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "content": row["content"],
+        "pinned": bool(row["pinned"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def db_create_memory(content: str, pinned: bool = False) -> dict:
+    mem_id = str(uuid.uuid4())
+    now = _now_iso()
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT INTO memories (id, content, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (mem_id, content, 1 if pinned else 0, now, now),
+        )
+    return _memory_to_public(
+        {"id": mem_id, "content": content, "pinned": 1 if pinned else 0,
+         "created_at": now, "updated_at": now}
+    )
+
+
+def db_list_memories() -> list[dict]:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM memories ORDER BY pinned DESC, updated_at DESC"
+        ).fetchall()
+    return [_memory_to_public(dict(r)) for r in rows]
+
+
+def db_get_memory(mem_id: str) -> Optional[dict]:
+    with _get_conn() as conn:
+        row = conn.execute("SELECT * FROM memories WHERE id = ?", (mem_id,)).fetchone()
+    return _memory_to_public(dict(row)) if row else None
+
+
+def db_update_memory(mem_id: str, content: Optional[str], pinned: Optional[bool]) -> Optional[dict]:
+    with _get_conn() as conn:
+        row = conn.execute("SELECT * FROM memories WHERE id = ?", (mem_id,)).fetchone()
+        if row is None:
+            return None
+        row = dict(row)
+        new_content = content if content is not None else row["content"]
+        new_pinned = (1 if pinned else 0) if pinned is not None else row["pinned"]
+        now = _now_iso()
+        conn.execute(
+            "UPDATE memories SET content = ?, pinned = ?, updated_at = ? WHERE id = ?",
+            (new_content, new_pinned, now, mem_id),
+        )
+    return _memory_to_public(
+        {"id": mem_id, "content": new_content, "pinned": new_pinned,
+         "created_at": row["created_at"], "updated_at": now}
+    )
+
+
+def db_delete_memory(mem_id: str) -> bool:
+    with _get_conn() as conn:
+        result = conn.execute("DELETE FROM memories WHERE id = ?", (mem_id,))
+    return result.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
 # Lifespan — init DB once on startup
 # ---------------------------------------------------------------------------
 
@@ -631,6 +706,16 @@ class CreateTaskRequest(BaseModel):
 class UpdateTaskRequest(BaseModel):
     title: Optional[str] = None
     done: Optional[bool] = None
+
+
+class CreateMemoryRequest(BaseModel):
+    content: str
+    pinned: bool = False
+
+
+class UpdateMemoryRequest(BaseModel):
+    content: Optional[str] = None
+    pinned: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------
@@ -862,6 +947,47 @@ def delete_document(document_id: str):
     deleted = db_delete_document(document_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Document not found")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Memory routes
+# ---------------------------------------------------------------------------
+
+@app.get("/memories")
+def list_memories():
+    """List remembered items (pinned first, then most recently updated)."""
+    return db_list_memories()
+
+
+@app.post("/memories")
+def create_memory(body: CreateMemoryRequest):
+    """Remember a new fact."""
+    return db_create_memory(content=body.content, pinned=body.pinned)
+
+
+@app.get("/memories/{memory_id}")
+def get_memory(memory_id: str):
+    mem = db_get_memory(memory_id)
+    if mem is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return mem
+
+
+@app.put("/memories/{memory_id}")
+def update_memory(memory_id: str, body: UpdateMemoryRequest):
+    """Update a memory's content and/or pinned state."""
+    result = db_update_memory(memory_id, content=body.content, pinned=body.pinned)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return result
+
+
+@app.delete("/memories/{memory_id}")
+def delete_memory(memory_id: str):
+    deleted = db_delete_memory(memory_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Memory not found")
     return {"ok": True}
 
 

@@ -19,6 +19,9 @@ import type {
   UpdateTaskPayload,
   DocumentMeta,
   DocumentDetail,
+  Memory,
+  CreateMemoryPayload,
+  UpdateMemoryPayload,
 } from "./types";
 
 const BASE_URL =
@@ -235,6 +238,34 @@ export const api = {
   deleteDocument(id: string): Promise<{ ok: boolean }> {
     return request(`/documents/${id}`, { method: "DELETE" });
   },
+
+  // ---------------------------------------------------------------------------
+  // Memory API helpers
+  // ---------------------------------------------------------------------------
+
+  listMemories(): Promise<Memory[]> {
+    return request("/memories");
+  },
+
+  createMemory(payload: CreateMemoryPayload): Promise<Memory> {
+    return request("/memories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateMemory(id: string, payload: UpdateMemoryPayload): Promise<Memory> {
+    return request(`/memories/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  deleteMemory(id: string): Promise<{ ok: boolean }> {
+    return request(`/memories/${id}`, { method: "DELETE" });
+  },
 };
 
 export type {
@@ -243,4 +274,5 @@ export type {
   Note, CreateNotePayload, UpdateNotePayload,
   Task, CreateTaskPayload, UpdateTaskPayload,
   DocumentMeta, DocumentDetail,
+  Memory, CreateMemoryPayload, UpdateMemoryPayload,
 };
