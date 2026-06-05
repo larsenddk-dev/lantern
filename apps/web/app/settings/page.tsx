@@ -1,17 +1,22 @@
-import { Settings } from "lucide-react";
+import { ProviderSettings } from "@/components/provider-settings";
 
 export default function SettingsPage() {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-      <Settings size={48} style={{ color: "var(--muted-foreground)" }} aria-hidden="true" />
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold mb-2">Settings</h1>
-        <p style={{ color: "var(--muted-foreground)" }} className="text-sm max-w-sm">
-          Configure your AI providers, workspace preferences, and more. Coming in a later phase.
+    <div className="flex flex-col h-full overflow-y-auto">
+      <header
+        className="px-8 py-5 border-b shrink-0"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <h1 className="text-xl font-semibold" style={{ color: "var(--foreground)" }}>
+          Settings
+        </h1>
+        <p className="text-sm mt-1" style={{ color: "var(--muted-foreground)" }}>
+          Configure AI providers and workspace preferences.
         </p>
-        <span className="inline-block mt-3 px-3 py-1 rounded-full text-xs font-medium" style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
-          Coming soon
-        </span>
+      </header>
+
+      <div className="flex-1 px-8 py-6 max-w-2xl">
+        <ProviderSettings />
       </div>
     </div>
   );

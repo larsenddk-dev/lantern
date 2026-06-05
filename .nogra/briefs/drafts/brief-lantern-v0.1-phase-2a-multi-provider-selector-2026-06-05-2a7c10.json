@@ -1,0 +1,86 @@
+{
+  "schema": "nogra.brief.v1",
+  "releaseVersion": "v1.0.0",
+  "briefId": "brief-lantern-v0.1-phase-2a-multi-provider-selector-2026-06-05-2a7c10",
+  "workspaceId": "lantern",
+  "title": "Lantern v0.1 — Phase 2a: multi-provider selector (choose provider + model at runtime)",
+  "createdAt": "2026-06-05T10:30:00.000Z",
+  "updatedAt": "2026-06-05T13:01:05.650Z",
+  "status": "ready",
+  "owner": "",
+  "targetRole": "",
+  "targetModel": "anthropic:sonnet",
+  "intent": "Let the user choose which OpenAI-compatible provider and model the chat uses at runtime — managed in Settings, persisted, and applied to every chat send — so Lantern can talk to any free provider (OpenRouter, Gemini, Groq, Mistral, Cerebras) or local Ollama without editing code. This is Phase 2a of v0.1; the real Notes/Tasks/Documents modules are a later brief (Phase 2b).",
+  "contextHandoff": "Lantern is a self-hosted, local-first AI workspace; decisions are in .nogra/state/DECISIONS.md. Phase 1 (brief 587ac5) is built and verified locally on Windows: apps/web = Next.js 16.2.7 + React 19.2.4 + Tailwind v4 (App Router, TypeScript) with a persistent nav shell, a working streaming chat UI, and stub pages; apps/api = FastAPI with /health, an OpenAI-compatible streaming /chat (SSE), SQLite session persistence, and /sessions. Today the provider/base-url/model/key come only from environment variables. This phase adds Settings-managed provider configs persisted server-side and used by /chat. FIRST ACTION: read apps/web/AGENTS.md, CLAUDE.md, README.md and .nogra/state/*; and because Next.js 16 / React 19 / Tailwind v4 are newer than model training, read the relevant guides under apps/web/node_modules/next/dist/docs/ before writing any frontend code and heed deprecation notices. Build on the existing OpenAI-compatible client (no provider-specific SDKs). API keys must never be committed: store them only in the gitignored local data dir (e.g. apps/api SQLite under data/). Keep streaming provable with a stub/fake provider in tests — no live external calls, no secrets.",
+  "decisions": [
+    "Provider/model selection lives in Settings and is persisted server-side (SQLite) so the backend /chat can resolve it; the active provider/model is applied on each chat request.",
+    "API keys are stored only in the local gitignored data dir, never committed; environment variables remain a default fallback.",
+    "Build on the existing OpenAI-compatible client layer; no provider-specific SDKs.",
+    "Chat must stay verifiable end-to-end against a stub provider in automated tests (no live calls, no secrets)."
+  ],
+  "rejected": [
+    "Full Phase 2 (provider selector + Notes + Tasks + Documents) in one run — too large to verify reliably; split into 2a (this) and 2b.",
+    "Storing provider API keys in the repo or a git-tracked config file — security no-go.",
+    "Per-message manual base-url/key entry in the composer — use a managed Settings list with an active selection instead."
+  ],
+  "knownGaps": [
+    "The executor environment likely has no live provider key or running Ollama, so a real end-to-end external model call is a user action, not a run requirement. Selection + plumbing are proven via a stub provider plus persistence round-trip tests."
+  ],
+  "scope": {
+    "in": [
+      "Backend: persist named provider configs in SQLite (label, baseUrl, model, apiKey) with an 'active' selection; GET/PUT/DELETE endpoints; store under the gitignored local data dir.",
+      "Backend: /chat resolves the active provider/model (or accepts providerId/model in the request body) instead of env-only; environment stays as the default fallback.",
+      "Backend: never return stored API keys in full — mask them on read; never write keys to a git-tracked file.",
+      "Web: Settings page UI to add/edit/delete provider configs and choose the active provider + model, persisted via the API.",
+      "Web: a provider/model indicator and quick switcher in the chat header that reads the active selection; chat send uses the active provider/model.",
+      "Web: client API helpers in apps/web/lib for the new settings/providers endpoints, with matching TypeScript types.",
+      "Tests: pytest for providers CRUD + active-selection persistence round-trip, /chat streaming using the selected provider/model against a STUB provider (no network/secrets), and API-key masking on read.",
+      "Docs/state: update .env.example and README provider-setup notes; update .nogra/state/SESSION-CHECKPOINT.md and CURRENT-TASKS.md (Phase 2a done; name Phase 2b = Notes/Tasks/Documents, Phase 3 = Memory/RAG)."
+    ],
+    "out": [
+      "Real Notes/Tasks/Documents module features (Phase 2b).",
+      "Memory/RAG retrieval (Phase 3), Agent + tools, Deep Research, Compare, Email, Calendar, Cookbook/model-serving, image editor, PWA.",
+      "Auth/multi-user, deployment/hosting/Docker.",
+      "Calling live external AI providers in automated tests, or adding real API keys/secrets to the repo."
+    ],
+    "files": [
+      "apps/api/main.py (EDIT — provider configs + active-selection persistence and endpoints; /chat uses active provider/model; key masking)",
+      "apps/api/test_main.py (EDIT — providers CRUD/persistence + stub-provider selection tests + masking)",
+      "apps/web/app/settings/page.tsx (EDIT — real provider/model management UI)",
+      "apps/web/components/ (EDIT/NEW — provider switcher in chat header; settings form components)",
+      "apps/web/lib/api.ts (EDIT — settings/providers client helpers)",
+      "apps/web/lib/types.ts (EDIT — provider/settings types)",
+      ".env.example (EDIT — document provider options; note keys live in local data, not committed)",
+      "README.md (EDIT — provider setup note)",
+      ".nogra/state/SESSION-CHECKPOINT.md (EDIT — phase status)",
+      ".nogra/state/CURRENT-TASKS.md (EDIT — phase status)"
+    ]
+  },
+  "successCriteria": [
+    "In Settings, a user can add at least one provider config (label, base URL, model, API key), see it listed, edit and delete it, and mark one active; the active selection persists across reloads because it is served from the backend.",
+    "Stored API keys are never returned in full by the API (masked on read) and never written to a git-tracked file.",
+    "The chat header shows the active provider/model and lets the user switch it; sending a chat uses the selected provider/model — verifiable because the outbound request to the stubbed provider carries the selected base URL and model.",
+    "The backend exposes providers/settings CRUD + active-selection endpoints backed by SQLite in the gitignored data dir, and /chat resolves the active provider/model with environment as a default fallback.",
+    "Automated pytest covers providers CRUD + active persistence round-trip, /chat streaming using the selected provider/model against a stub provider (no network/secrets), and key masking — and all tests pass.",
+    "next build passes and the existing chat + session behavior still works.",
+    ".nogra/state/SESSION-CHECKPOINT.md and CURRENT-TASKS.md are updated to mark Phase 2a done and name Phase 2b (Notes/Tasks/Documents) and Phase 3 (Memory/RAG)."
+  ],
+  "stopCriteria": [
+    "First action: read apps/web/AGENTS.md, CLAUDE.md, README.md and .nogra/state/*; then run pre-flight checks: `node --version`, `npm --version`, and `py -3.11 --version` (or `python --version`). If Node, npm, or Python 3.11+ is missing, status: blocked, name what is missing, and do not install runtimes or scaffold partial files.",
+    "Before writing any frontend code, read the relevant guides under apps/web/node_modules/next/dist/docs/ for Next.js 16 / React 19 / Tailwind v4 conventions; do not rely on pre-Next-15 assumptions.",
+    "Do not add real API keys or secrets to the repo and do not call live external providers, including in tests — use a stub/fake endpoint. Keys persist only in the gitignored local data dir.",
+    "Do not implement Phase 2b modules (real Notes/Tasks/Documents features), Memory/RAG, auth, or deployment; if delivering the selector would require going outside this slice, stop and return for a follow-up brief.",
+    "If `next build` or `pytest` exits non-zero and cannot proceed cleanly, stop with the command output rather than hand-patching a broken state.",
+    "Do not modify .nogra/ contracts or config.json; only update the named .nogra/state/* continuity files."
+  ],
+  "maxOutput": {
+    "format": "evidence-first state brief",
+    "limit": "no hard word limit; keep the opening summary concise and include all evidence needed to verify the result"
+  },
+  "evidenceRequired": "reported",
+  "handoffRefs": [],
+  "metadata": {
+    "promotedAt": "2026-06-05T13:01:05.650Z",
+    "promotedPath": ".nogra/briefs/brief-lantern-v0.1-phase-2a-multi-provider-selector-2026-06-05-2a7c10.md"
+  }
+}

@@ -3,7 +3,15 @@
  * Base URL is read from NEXT_PUBLIC_LANTERN_API_URL (defaults to localhost:8000).
  */
 
-import type { Session, SessionDetail, Message } from "./types";
+import type {
+  Session,
+  SessionDetail,
+  Message,
+  Provider,
+  CreateProviderPayload,
+  UpdateProviderPayload,
+  ActiveProviderResponse,
+} from "./types";
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_LANTERN_API_URL?.replace(/\/$/, "") ??
@@ -47,12 +55,18 @@ export const api = {
     sessionId: string,
     message: string,
     onDelta: (delta: string | null) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    providerId?: string,
+    model?: string,
   ): Promise<void> {
+    const body: Record<string, string> = { session_id: sessionId, message };
+    if (providerId) body.provider_id = providerId;
+    if (model) body.model = model;
+
     const res = await fetch(`${BASE_URL}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, message }),
+      body: JSON.stringify(body),
       signal,
     });
     if (!res.ok) {
@@ -90,6 +104,42 @@ export const api = {
     }
     onDelta(null);
   },
+
+  // ---------------------------------------------------------------------------
+  // Provider API helpers (Phase 2a)
+  // ---------------------------------------------------------------------------
+
+  listProviders(): Promise<Provider[]> {
+    return request("/providers");
+  },
+
+  getActiveProvider(): Promise<ActiveProviderResponse> {
+    return request("/providers/active");
+  },
+
+  createProvider(payload: CreateProviderPayload): Promise<Provider> {
+    return request("/providers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateProvider(id: string, payload: UpdateProviderPayload): Promise<Provider> {
+    return request(`/providers/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  deleteProvider(id: string): Promise<{ ok: boolean }> {
+    return request(`/providers/${id}`, { method: "DELETE" });
+  },
+
+  activateProvider(id: string): Promise<Provider> {
+    return request(`/providers/${id}/activate`, { method: "POST" });
+  },
 };
 
-export type { Session, SessionDetail, Message };
+export type { Session, SessionDetail, Message, Provider, CreateProviderPayload, UpdateProviderPayload };

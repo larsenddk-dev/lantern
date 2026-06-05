@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Send, Plus, MessageSquare, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import type { Session, Message } from "@/lib/types";
+import type { Session, Message, Provider } from "@/lib/types";
+import { ProviderSwitcher } from "@/components/provider-switcher";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -118,6 +119,7 @@ export function ChatShell() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<Provider | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -234,7 +236,9 @@ export function ChatShell() {
             );
           }
         },
-        abort.signal
+        abort.signal,
+        activeProvider?.id,
+        activeProvider?.model,
       );
     } catch (e) {
       if ((e as Error)?.name !== "AbortError") {
@@ -319,12 +323,13 @@ export function ChatShell() {
             style={{ color: "var(--muted-foreground)" }}
             aria-hidden="true"
           />
-          <span className="text-sm font-medium">
+          <span className="text-sm font-medium flex-1 truncate">
             {activeSessionId
               ? (sessions.find((s) => s.id === activeSessionId)?.title ??
                 "Chat")
               : "Chat"}
           </span>
+          <ProviderSwitcher onProviderChange={setActiveProvider} />
         </header>
 
         {/* Message list */}

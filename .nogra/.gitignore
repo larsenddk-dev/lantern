@@ -1,4 +1,6 @@
 memory/runtime/
+# local routing telemetry written by Nogra hooks
+runtime/
 transport/logs/
 *.tmp
 

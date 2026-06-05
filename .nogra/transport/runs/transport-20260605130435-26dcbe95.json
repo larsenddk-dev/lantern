@@ -1,0 +1,81 @@
+{
+  "schema": "nogra.transport.run.v1",
+  "releaseVersion": "v1.0.0",
+  "runId": "transport-20260605130435-26dcbe95",
+  "createdAt": "2026-06-05T13:04:35.895Z",
+  "updatedAt": "2026-06-05T13:21:46.396Z",
+  "status": "ok",
+  "phase": "returned",
+  "target": "executor",
+  "targetRole": "executor",
+  "targetModel": "anthropic:sonnet",
+  "executionRole": "nogra:executor",
+  "executionRuntime": "anthropic:sonnet",
+  "executionEffort": "medium",
+  "executionContext": "default",
+  "executionMaxTurns": null,
+  "executionRuntimePolicyProfile": "default",
+  "executionRuntimeSource": "release default",
+  "executionLabel": "Executor · Sonnet · Ok",
+  "briefId": "brief-lantern-v0.1-phase-2a-multi-provider-selector-2026-06-05-2a7c10",
+  "metadata": {
+    "mode": "local",
+    "receiptType": "localDispatchReceipt",
+    "targetRole": "executor",
+    "targetModel": "anthropic:sonnet",
+    "scopeFiles": [
+      "apps/api/main.py (EDIT — provider configs + active-selection persistence and endpoints; /chat uses active provider/model; key masking)",
+      "apps/api/test_main.py (EDIT — providers CRUD/persistence + stub-provider selection tests + masking)",
+      "apps/web/app/settings/page.tsx (EDIT — real provider/model management UI)",
+      "apps/web/components/ (EDIT/NEW — provider switcher in chat header; settings form components)",
+      "apps/web/lib/api.ts (EDIT — settings/providers client helpers)",
+      "apps/web/lib/types.ts (EDIT — provider/settings types)",
+      ".env.example (EDIT — document provider options; note keys live in local data, not committed)",
+      "README.md (EDIT — provider setup note)",
+      ".nogra/state/SESSION-CHECKPOINT.md (EDIT — phase status)",
+      ".nogra/state/CURRENT-TASKS.md (EDIT — phase status)"
+    ],
+    "successCriteria": [
+      "In Settings, a user can add at least one provider config (label, base URL, model, API key), see it listed, edit and delete it, and mark one active; the active selection persists across reloads because it is served from the backend.",
+      "Stored API keys are never returned in full by the API (masked on read) and never written to a git-tracked file.",
+      "The chat header shows the active provider/model and lets the user switch it; sending a chat uses the selected provider/model — verifiable because the outbound request to the stubbed provider carries the selected base URL and model.",
+      "The backend exposes providers/settings CRUD + active-selection endpoints backed by SQLite in the gitignored data dir, and /chat resolves the active provider/model with environment as a default fallback.",
+      "Automated pytest covers providers CRUD + active persistence round-trip, /chat streaming using the selected provider/model against a stub provider (no network/secrets), and key masking — and all tests pass.",
+      "next build passes and the existing chat + session behavior still works.",
+      ".nogra/state/SESSION-CHECKPOINT.md and CURRENT-TASKS.md are updated to mark Phase 2a done and name Phase 2b (Notes/Tasks/Documents) and Phase 3 (Memory/RAG)."
+    ],
+    "stopCriteria": [
+      "First action: read apps/web/AGENTS.md, CLAUDE.md, README.md and .nogra/state/*; then run pre-flight checks: `node --version`, `npm --version`, and `py -3.11 --version` (or `python --version`). If Node, npm, or Python 3.11+ is missing, status: blocked, name what is missing, and do not install runtimes or scaffold partial files.",
+      "Before writing any frontend code, read the relevant guides under apps/web/node_modules/next/dist/docs/ for Next.js 16 / React 19 / Tailwind v4 conventions; do not rely on pre-Next-15 assumptions.",
+      "Do not add real API keys or secrets to the repo and do not call live external providers, including in tests — use a stub/fake endpoint. Keys persist only in the gitignored local data dir.",
+      "Do not implement Phase 2b modules (real Notes/Tasks/Documents features), Memory/RAG, auth, or deployment; if delivering the selector would require going outside this slice, stop and return for a follow-up brief.",
+      "If `next build` or `pytest` exits non-zero and cannot proceed cleanly, stop with the command output rather than hand-patching a broken state.",
+      "Do not modify .nogra/ contracts or config.json; only update the named .nogra/state/* continuity files."
+    ],
+    "executionRole": "nogra:executor",
+    "executionRuntime": "anthropic:sonnet",
+    "executionEffort": "medium",
+    "executionContext": "default",
+    "executionMaxTurns": null,
+    "executionRuntimePolicyProfile": "default",
+    "executionRuntimeSource": "release default",
+    "executionLabel": "Executor · Sonnet · Ok",
+    "nextOwner": "Manager"
+  },
+  "paths": {
+    "artifactsDir": ".nogra/transport/artifacts/transport-20260605130435-26dcbe95",
+    "report": ".nogra/transport/artifacts/transport-20260605130435-26dcbe95/report.md",
+    "output": ".nogra/transport/artifacts/transport-20260605130435-26dcbe95/output.md",
+    "log": ".nogra/transport/artifacts/transport-20260605130435-26dcbe95/log"
+  },
+  "artifacts": {
+    "reportExists": true,
+    "outputExists": true,
+    "logExists": false
+  },
+  "summary": "Phase 2a (multi-provider selector) delivered and independently Manager-verified on Windows: 11/11 pytest green, next build clean. Backend providers CRUD + active selection in SQLite (keys masked, apps/api/lantern.db gitignored), /chat resolves active provider with env fallback; Settings UI + chat-header switcher added. 6/7 brief criteria met by the executor; criterion #7 (.nogra/state) completed by the Manager after the executor ran out of turns.",
+  "error": "",
+  "redactions": [],
+  "completedAt": "2026-06-05T13:21:46.396Z",
+  "durationSeconds": 1031
+}
