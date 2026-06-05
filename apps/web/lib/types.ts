@@ -138,3 +138,18 @@ export interface UpdateMemoryPayload {
   content?: string;
   pinned?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Compare types
+// ---------------------------------------------------------------------------
+
+export interface CompareTarget {
+  provider_id?: string;
+  model?: string;
+}
+
+export interface CompareResult {
+  model: string;
+  reply: string;
+  error: string | null;
+}

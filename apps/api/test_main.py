@@ -759,3 +759,41 @@ def test_chat_use_context_false_skips_injection(monkeypatch):
     msgs = captured["messages"]
     assert not any("xyzzy" in m["content"] for m in msgs)
     client.delete(f"/memories/{mem['id']}")
+
+
+# ---------------------------------------------------------------------------
+# Tests — Compare (multi-model), offline stub
+# ---------------------------------------------------------------------------
+
+
+def test_compare_returns_one_result_per_target(monkeypatch):
+    def _stub_complete(messages, **kwargs):
+        return f"reply from {kwargs.get('model')}"
+
+    monkeypatch.setattr(main, "complete_chat_once", _stub_complete)
+    p1 = client.post("/providers", json={
+        "label": "A", "base_url": "http://a/v1", "model": "model-a", "api_key": "x"}).json()
+    p2 = client.post("/providers", json={
+        "label": "B", "base_url": "http://b/v1", "model": "model-b", "api_key": "y"}).json()
+
+    resp = client.post("/compare", json={
+        "message": "hello",
+        "targets": [{"provider_id": p1["id"]}, {"provider_id": p2["id"]}],
+    }).json()
+    assert len(resp["results"]) == 2
+    assert "model-a" in resp["results"][0]["reply"]
+    assert "model-b" in resp["results"][1]["reply"]
+
+    client.delete(f"/providers/{p1['id']}")
+    client.delete(f"/providers/{p2['id']}")
+
+
+def test_compare_captures_per_target_errors(monkeypatch):
+    def _boom(messages, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(main, "complete_chat_once", _boom)
+    resp = client.post("/compare", json={"message": "hi", "targets": [{"model": "x"}]}).json()
+    assert len(resp["results"]) == 1
+    assert resp["results"][0]["error"] is not None
+    assert resp["results"][0]["reply"] == ""

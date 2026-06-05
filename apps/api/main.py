@@ -444,6 +444,20 @@ def db_resolve_provider(provider_id: Optional[str] = None) -> tuple[str, str, st
 # OpenAI-compatible streaming client
 # ---------------------------------------------------------------------------
 
+def complete_chat_once(messages: list[dict], *, base_url: str, api_key: str, model: str) -> str:
+    """Non-streaming chat completion via an OpenAI-compatible endpoint. Returns
+    the full reply text. Used by Compare and the Agent loop. Stubbed in tests."""
+    url = base_url.rstrip("/") + "/chat/completions"
+    resp = httpx.post(
+        url,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={"model": model, "messages": messages, "stream": False},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
+
+
 async def stream_chat_completion(
     messages: list[dict],
     *,
@@ -857,6 +871,16 @@ class RagSearchRequest(BaseModel):
     k: int = 5
 
 
+class CompareTarget(BaseModel):
+    provider_id: Optional[str] = None
+    model: Optional[str] = None
+
+
+class CompareRequest(BaseModel):
+    message: str
+    targets: list[CompareTarget] = []
+
+
 class CreateProviderRequest(BaseModel):
     label: str
     base_url: str
@@ -1193,6 +1217,30 @@ def rag_index(force: bool = False):
 def rag_search_route(body: RagSearchRequest):
     """Return the top-k stored chunks most similar to the query."""
     return rag_search(body.query, k=body.k)
+
+
+# ---------------------------------------------------------------------------
+# Compare route — same prompt across multiple models, side by side
+# ---------------------------------------------------------------------------
+
+@app.post("/compare")
+def compare(body: CompareRequest):
+    """Send one prompt to several provider/model targets and return each reply.
+    Defaults to the active provider if no targets given. Per-target errors are
+    captured (one failing model does not fail the whole comparison)."""
+    targets = body.targets or [CompareTarget()]
+    messages = [{"role": "user", "content": body.message}]
+    results = []
+    for t in targets:
+        base, key, model = db_resolve_provider(t.provider_id)
+        if t.model:
+            model = t.model
+        try:
+            reply = complete_chat_once(messages, base_url=base, api_key=key, model=model)
+            results.append({"model": model, "reply": reply, "error": None})
+        except Exception as e:
+            results.append({"model": model, "reply": "", "error": str(e)[:200]})
+    return {"results": results}
 
 
 # ---------------------------------------------------------------------------

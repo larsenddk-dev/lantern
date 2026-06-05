@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   MessageSquare,
+  Columns2,
   FileText,
   StickyNote,
   CheckSquare,
@@ -15,6 +16,7 @@ import {
 
 const navItems = [
   { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/compare", label: "Compare", icon: Columns2 },
   { href: "/documents", label: "Documents", icon: FileText },
   { href: "/notes", label: "Notes", icon: StickyNote },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },

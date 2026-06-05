@@ -22,6 +22,8 @@ import type {
   Memory,
   CreateMemoryPayload,
   UpdateMemoryPayload,
+  CompareTarget,
+  CompareResult,
 } from "./types";
 
 const BASE_URL =
@@ -288,6 +290,18 @@ export const api = {
       body: JSON.stringify({ query, k }),
     });
   },
+
+  // ---------------------------------------------------------------------------
+  // Compare API helper (multi-model)
+  // ---------------------------------------------------------------------------
+
+  compare(message: string, targets: CompareTarget[]): Promise<{ results: CompareResult[] }> {
+    return request("/compare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, targets }),
+    });
+  },
 };
 
 export type {
@@ -297,4 +311,5 @@ export type {
   Task, CreateTaskPayload, UpdateTaskPayload,
   DocumentMeta, DocumentDetail,
   Memory, CreateMemoryPayload, UpdateMemoryPayload,
+  CompareTarget, CompareResult,
 };
