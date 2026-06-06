@@ -905,6 +905,31 @@ def test_parse_subquestions_fallback_for_non_json():
     assert subs[0].startswith("First sub question")
 
 
+def test_research_includes_web_sources_when_configured(monkeypatch):
+    calls = {"n": 0}
+
+    def _stub_complete(messages, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return '["What is Z?"]'
+        return "Report about Z with web context."
+
+    monkeypatch.setattr(main, "complete_chat_once", _stub_complete)
+    monkeypatch.setattr(main, "embed_texts", _stub_embed)
+    # Pretend Tavily key is set, and stub web_search.
+    monkeypatch.setattr(main, "LANTERN_TAVILY_API_KEY", "fake-key")
+    monkeypatch.setattr(main, "web_search", lambda q, max_results=3: {
+        "configured": True,
+        "results": [{"title": "Web R1", "url": "https://r1.example", "content": "web content"}],
+    })
+
+    resp = client.post("/research", json={"question": "Tell me about Z"}).json()
+    src_types = {s["source_type"] for f in resp["findings"] for s in f["sources"]}
+    assert "web" in src_types
+    web_src = next(s for f in resp["findings"] for s in f["sources"] if s["source_type"] == "web")
+    assert web_src["url"] == "https://r1.example"
+
+
 # ---------------------------------------------------------------------------
 # Tests — Global search
 # ---------------------------------------------------------------------------

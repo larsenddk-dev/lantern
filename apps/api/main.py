@@ -1196,9 +1196,12 @@ def research_run(question: str, *, max_subquestions: int = 4) -> dict:
     plan_raw = complete_chat_once(plan_prompt, base_url=base_url, api_key=api_key, model=model)
     subquestions = _parse_subquestions(plan_raw, max_subquestions) or [question]
 
-    # 2) Gather — retrieve relevant saved knowledge for each sub-question.
+    # 2) Gather — retrieve relevant saved knowledge for each sub-question, and
+    #    additionally search the public web when configured (Tavily). Web hits
+    #    are added as their own source type so the UI can show them with a URL.
     findings = []
     context_blocks = []
+    web_configured = bool(LANTERN_TAVILY_API_KEY)
     for sq in subquestions:
         try:
             hits = rag_search(sq, k=3)
@@ -1209,6 +1212,17 @@ def research_run(question: str, *, max_subquestions: int = 4) -> dict:
              "score": round(h["score"], 3)}
             for h in hits if h["score"] > 0.1
         ]
+
+        if web_configured:
+            web = web_search(sq, max_results=3)
+            for r in web.get("results", []):
+                sources.append({
+                    "source_type": "web",
+                    "content": f"{r['title']} — {r['content'][:300]}",
+                    "url": r.get("url") or None,
+                    "score": 0.0,
+                })
+
         findings.append({"subquestion": sq, "sources": sources})
         if sources:
             context_blocks.append(

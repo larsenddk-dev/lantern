@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Telescope, Play, ChevronDown, ChevronRight, FileText, Brain, Download } from "lucide-react";
+import { Telescope, Play, ChevronDown, ChevronRight, FileText, Brain, Download, Globe } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ResearchResponse } from "@/lib/types";
 import { Markdown } from "@/components/markdown";
@@ -112,12 +112,33 @@ export default function ResearchPage() {
                         <p style={{ color: "var(--muted-foreground)" }}>No saved knowledge matched.</p>
                       ) : (
                         <ul className="flex flex-col gap-1">
-                          {f.sources.map((s, si) => (
-                            <li key={si} className="flex items-start gap-1.5" style={{ color: "var(--muted-foreground)" }}>
-                              {s.source_type === "document" ? <FileText size={11} className="mt-0.5 shrink-0" /> : <Brain size={11} className="mt-0.5 shrink-0" />}
-                              <span className="break-words">{s.content}</span>
-                            </li>
-                          ))}
+                          {f.sources.map((s, si) => {
+                            const Icon =
+                              s.source_type === "document" ? FileText :
+                              s.source_type === "web" ? Globe : Brain;
+                            return (
+                              <li key={si} className="flex items-start gap-1.5" style={{ color: "var(--muted-foreground)" }}>
+                                <Icon size={11} className="mt-0.5 shrink-0" />
+                                <span className="break-words">
+                                  {s.content}
+                                  {s.url && (
+                                    <>
+                                      {" "}
+                                      <a
+                                        href={s.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={{ color: "var(--primary)" }}
+                                        className="underline"
+                                      >
+                                        source
+                                      </a>
+                                    </>
+                                  )}
+                                </span>
+                              </li>
+                            );
+                          })}
                         </ul>
                       )}
                     </div>

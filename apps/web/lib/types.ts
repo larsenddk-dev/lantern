@@ -177,6 +177,7 @@ export interface ResearchSource {
   source_type: string;
   content: string;
   score: number;
+  url?: string | null;
 }
 
 export interface ResearchFinding {
