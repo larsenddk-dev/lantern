@@ -33,7 +33,9 @@ export default function DocumentsPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<DocumentDetail | null>(null);
+  const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepth = useRef(0);
 
   const load = useCallback(async () => {
     try {
@@ -86,8 +88,51 @@ export default function DocumentsPage() {
     }
   }
 
+  // Drag-and-drop upload (depth counter avoids flicker from child enter/leave).
+  function onDragEnter(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragging(true);
+  }
+  function onDragOver(e: React.DragEvent) {
+    if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+  }
+  function onDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    dragDepth.current -= 1;
+    if (dragDepth.current <= 0) {
+      dragDepth.current = 0;
+      setDragging(false);
+    }
+  }
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    handleFiles(e.dataTransfer.files);
+  }
+
   return (
-    <div className="flex flex-col h-full">
+    <div
+      className="flex flex-col h-full relative"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dragging && (
+        <div
+          className="absolute inset-3 z-20 rounded-xl flex flex-col items-center justify-center gap-2 pointer-events-none"
+          style={{ background: "var(--muted)", border: "2px dashed var(--primary)" }}
+        >
+          <Upload size={32} style={{ color: "var(--primary)" }} aria-hidden="true" />
+          <p className="text-sm font-medium">Drop files to upload</p>
+          <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+            .txt · .md · .pdf · .docx
+          </p>
+        </div>
+      )}
       {/* Header */}
       <header
         className="flex items-center justify-between px-6 py-4 shrink-0"
@@ -136,7 +181,8 @@ export default function DocumentsPage() {
               <div>
                 <p className="text-sm font-medium">No documents yet</p>
                 <p className="text-xs mt-1 max-w-xs" style={{ color: "var(--muted-foreground)" }}>
-                  Upload a .txt, .md, .pdf or .docx file. Lantern extracts the text so you can read it here.
+                  Drag &amp; drop files here, or use Upload — .txt, .md, .pdf or .docx.
+                  Lantern extracts the text so you can read it here.
                 </p>
               </div>
             </div>
