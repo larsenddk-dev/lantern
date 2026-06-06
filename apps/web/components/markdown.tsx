@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import { cn } from "@/lib/utils";
 
 /** A fenced code block with a hover "Copy" button. */
@@ -19,21 +20,20 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
     }
   }
   return (
-    <div className="relative my-2 group/code">
+    <div
+      className="relative my-2 group/code rounded-md overflow-hidden"
+      style={{ border: "1px solid var(--border)" }}
+    >
       <button
         onClick={copy}
-        className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] opacity-0 group-hover/code:opacity-100 transition-opacity"
+        className="absolute top-1.5 right-1.5 z-10 px-1.5 py-0.5 rounded text-[10px] opacity-0 group-hover/code:opacity-100 transition-opacity"
         style={{ background: "var(--background)", border: "1px solid var(--border)", color: "var(--muted-foreground)" }}
         title="Copy code"
         aria-label="Copy code"
       >
         {copied ? "Copied" : "Copy"}
       </button>
-      <pre
-        ref={ref}
-        className="p-3 rounded-md overflow-x-auto text-[0.85em] leading-relaxed"
-        style={{ background: "color-mix(in srgb, var(--foreground) 6%, transparent)", border: "1px solid var(--border)" }}
-      >
+      <pre ref={ref} className="overflow-x-auto text-[0.85em] leading-relaxed">
         {children}
       </pre>
     </div>
@@ -55,6 +55,7 @@ export function Markdown({ children }: { children: string }) {
     <div className="min-w-0 break-words">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
         components={{
           p: ({ children }) => (
             <p className="my-2 first:mt-0 last:mb-0 leading-relaxed">{children}</p>

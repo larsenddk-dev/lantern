@@ -4,6 +4,7 @@ import { NavSidebar } from "@/components/nav-sidebar";
 import { StartupGate } from "@/components/startup-gate";
 import { CommandPalette } from "@/components/command-palette";
 import "./globals.css";
+import "highlight.js/styles/github-dark.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
