@@ -1049,3 +1049,75 @@ def test_calendar_returns_events_when_stubbed(monkeypatch):
     body = client.get("/calendar").json()
     assert body["configured"] is True
     assert body["events"][0]["summary"] == "Dentist"
+
+
+# ---------------------------------------------------------------------------
+# Tests — Prompt library
+# ---------------------------------------------------------------------------
+
+
+def test_prompts_crud():
+    p = client.post("/prompts", json={"title": "Concise", "content": "Reply in <= 2 sentences."}).json()
+    pid = p["id"]
+    listed = client.get("/prompts").json()
+    assert any(x["id"] == pid for x in listed)
+    got = client.get(f"/prompts/{pid}").json()
+    assert got["content"].startswith("Reply in")
+    upd = client.put(f"/prompts/{pid}", json={"title": "Brief"}).json()
+    assert upd["title"] == "Brief"
+    assert client.delete(f"/prompts/{pid}").status_code == 200
+    assert client.get(f"/prompts/{pid}").status_code == 404
+
+
+def test_prompts_not_found():
+    assert client.get("/prompts/nope").status_code == 404
+    assert client.put("/prompts/nope", json={"title": "x"}).status_code == 404
+    assert client.delete("/prompts/nope").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Tests — Starred messages
+# ---------------------------------------------------------------------------
+
+
+def test_star_unstar_message(monkeypatch):
+    async def _fake_stream(*_a, **_kw):
+        for token in ["Hello"]:
+            yield token
+
+    monkeypatch.setattr(main, "stream_chat_completion", _fake_stream)
+    sess = client.post("/sessions", json={"title": "starred"}).json()
+    with client.stream("POST", "/chat",
+                       json={"session_id": sess["id"], "message": "hi"}) as resp:
+        b"".join(resp.iter_bytes())
+    detail = client.get(f"/sessions/{sess['id']}").json()
+    msg_id = detail["messages"][0]["id"]
+
+    assert client.post(f"/messages/{msg_id}/star").json()["starred"] is True
+    listed = client.get("/messages/starred").json()
+    assert any(m["id"] == msg_id for m in listed)
+    assert client.delete(f"/messages/{msg_id}/star").json()["starred"] is False
+
+
+def test_star_nonexistent_message_returns_404():
+    assert client.post("/messages/nope/star").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Tests — Stats + export
+# ---------------------------------------------------------------------------
+
+
+def test_stats_returns_all_counts():
+    s = client.get("/stats").json()
+    for key in ("sessions", "messages", "notes", "tasks", "documents",
+                "memories", "prompts", "embeddings", "providers", "starred_messages"):
+        assert key in s
+        assert isinstance(s[key], int)
+
+
+def test_export_chats_returns_zip():
+    resp = client.get("/export/chats")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+    assert resp.content[:2] == b"PK"  # zip magic

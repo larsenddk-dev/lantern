@@ -143,6 +143,19 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS prompts (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS message_stars (
+                message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS embeddings (
                 id TEXT PRIMARY KEY,
                 source_type TEXT NOT NULL,
@@ -742,6 +755,90 @@ def db_delete_memory(mem_id: str) -> bool:
     with _get_conn() as conn:
         result = conn.execute("DELETE FROM memories WHERE id = ?", (mem_id,))
     return result.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Prompts — reusable system/user prompts
+# ---------------------------------------------------------------------------
+
+def db_create_prompt(title: str, content: str) -> dict:
+    pid = str(uuid.uuid4())
+    now = _now_iso()
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT INTO prompts (id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (pid, title, content, now, now),
+        )
+    return {"id": pid, "title": title, "content": content, "created_at": now, "updated_at": now}
+
+
+def db_list_prompts() -> list[dict]:
+    with _get_conn() as conn:
+        rows = conn.execute("SELECT * FROM prompts ORDER BY updated_at DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def db_get_prompt(pid: str) -> Optional[dict]:
+    with _get_conn() as conn:
+        row = conn.execute("SELECT * FROM prompts WHERE id = ?", (pid,)).fetchone()
+    return dict(row) if row else None
+
+
+def db_update_prompt(pid: str, title: Optional[str], content: Optional[str]) -> Optional[dict]:
+    with _get_conn() as conn:
+        row = conn.execute("SELECT * FROM prompts WHERE id = ?", (pid,)).fetchone()
+        if row is None:
+            return None
+        row = dict(row)
+        new_title = title if title is not None else row["title"]
+        new_content = content if content is not None else row["content"]
+        now = _now_iso()
+        conn.execute(
+            "UPDATE prompts SET title = ?, content = ?, updated_at = ? WHERE id = ?",
+            (new_title, new_content, now, pid),
+        )
+    return {"id": pid, "title": new_title, "content": new_content,
+            "created_at": row["created_at"], "updated_at": now}
+
+
+def db_delete_prompt(pid: str) -> bool:
+    with _get_conn() as conn:
+        result = conn.execute("DELETE FROM prompts WHERE id = ?", (pid,))
+    return result.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Message stars — favorite individual messages
+# ---------------------------------------------------------------------------
+
+def db_star_message(message_id: str) -> bool:
+    with _get_conn() as conn:
+        exists = conn.execute("SELECT 1 FROM messages WHERE id = ?", (message_id,)).fetchone()
+        if not exists:
+            return False
+        conn.execute(
+            "INSERT OR IGNORE INTO message_stars (message_id, created_at) VALUES (?, ?)",
+            (message_id, _now_iso()),
+        )
+    return True
+
+
+def db_unstar_message(message_id: str) -> bool:
+    with _get_conn() as conn:
+        result = conn.execute("DELETE FROM message_stars WHERE message_id = ?", (message_id,))
+    return result.rowcount > 0
+
+
+def db_list_starred() -> list[dict]:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT m.id, m.session_id, m.role, m.content, m.created_at, s.title AS session_title "
+            "FROM message_stars ms "
+            "JOIN messages m ON m.id = ms.message_id "
+            "LEFT JOIN sessions s ON s.id = m.session_id "
+            "ORDER BY ms.created_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -1469,6 +1566,16 @@ class UpdateMemoryRequest(BaseModel):
     pinned: Optional[bool] = None
 
 
+class CreatePromptRequest(BaseModel):
+    title: str = ""
+    content: str = ""
+
+
+class UpdatePromptRequest(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -1755,6 +1862,121 @@ def delete_memory(memory_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Memory not found")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Prompt library routes
+# ---------------------------------------------------------------------------
+
+@app.get("/prompts")
+def list_prompts():
+    return db_list_prompts()
+
+
+@app.post("/prompts")
+def create_prompt(body: CreatePromptRequest):
+    return db_create_prompt(title=body.title, content=body.content)
+
+
+@app.get("/prompts/{prompt_id}")
+def get_prompt(prompt_id: str):
+    p = db_get_prompt(prompt_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    return p
+
+
+@app.put("/prompts/{prompt_id}")
+def update_prompt(prompt_id: str, body: UpdatePromptRequest):
+    result = db_update_prompt(prompt_id, title=body.title, content=body.content)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    return result
+
+
+@app.delete("/prompts/{prompt_id}")
+def delete_prompt(prompt_id: str):
+    if not db_delete_prompt(prompt_id):
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Starred-messages routes
+# ---------------------------------------------------------------------------
+
+@app.post("/messages/{message_id}/star")
+def star_message(message_id: str):
+    if not db_star_message(message_id):
+        raise HTTPException(status_code=404, detail="Message not found")
+    return {"ok": True, "starred": True}
+
+
+@app.delete("/messages/{message_id}/star")
+def unstar_message(message_id: str):
+    db_unstar_message(message_id)
+    return {"ok": True, "starred": False}
+
+
+@app.get("/messages/starred")
+def list_starred_messages():
+    return db_list_starred()
+
+
+# ---------------------------------------------------------------------------
+# Stats route — high-level counts for the Stats page
+# ---------------------------------------------------------------------------
+
+@app.get("/stats")
+def stats():
+    with _get_conn() as conn:
+        def n(sql: str) -> int:
+            return conn.execute(sql).fetchone()[0]
+        return {
+            "sessions": n("SELECT COUNT(*) FROM sessions"),
+            "messages": n("SELECT COUNT(*) FROM messages"),
+            "messages_user": n("SELECT COUNT(*) FROM messages WHERE role = 'user'"),
+            "messages_assistant": n("SELECT COUNT(*) FROM messages WHERE role = 'assistant'"),
+            "notes": n("SELECT COUNT(*) FROM notes"),
+            "tasks": n("SELECT COUNT(*) FROM tasks"),
+            "tasks_done": n("SELECT COUNT(*) FROM tasks WHERE done = 1"),
+            "documents": n("SELECT COUNT(*) FROM documents"),
+            "memories": n("SELECT COUNT(*) FROM memories"),
+            "memories_pinned": n("SELECT COUNT(*) FROM memories WHERE pinned = 1"),
+            "prompts": n("SELECT COUNT(*) FROM prompts"),
+            "embeddings": n("SELECT COUNT(*) FROM embeddings"),
+            "providers": n("SELECT COUNT(*) FROM providers"),
+            "starred_messages": n("SELECT COUNT(*) FROM message_stars"),
+        }
+
+
+# ---------------------------------------------------------------------------
+# Export route — all chats as a zipped Markdown archive
+# ---------------------------------------------------------------------------
+
+@app.get("/export/chats")
+def export_chats():
+    """Stream a zip of every session as a Markdown file. Read-only."""
+    import io
+    import zipfile
+    from fastapi.responses import StreamingResponse as _SR
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for s in db_list_sessions():
+            detail = db_get_session(s["id"])
+            if not detail:
+                continue
+            title = s.get("title") or "conversation"
+            safe_name = _safe_filename(title) or s["id"]
+            lines = [f"# {title}\n", f"*Exported from Lantern*\n", ""]
+            for m in detail["messages"]:
+                role = "You" if m["role"] == "user" else "Lantern"
+                lines.append(f"## {role}\n\n{m['content'].strip()}\n")
+            zf.writestr(f"{safe_name}-{s['id'][:8]}.md", "\n".join(lines))
+    buf.seek(0)
+    return _SR(iter([buf.getvalue()]), media_type="application/zip",
+               headers={"Content-Disposition": 'attachment; filename="lantern-chats.zip"'})
 
 
 # ---------------------------------------------------------------------------
