@@ -18,6 +18,7 @@ import {
   CalendarDays,
   Sparkles,
   BarChart3,
+  Star,
   Settings,
 } from "lucide-react";
 
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/memory", label: "Memory", icon: Brain },
   { href: "/prompts", label: "Prompts", icon: Sparkles },
+  { href: "/starred", label: "Starred", icon: Star },
   { href: "/email", label: "Email", icon: Mail },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/stats", label: "Stats", icon: BarChart3 },

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { StickyNote, Plus, Trash2, Edit2, Check, X, Brain } from "lucide-react";
+import { StickyNote, Plus, Trash2, Edit2, Check, X, Brain, Download } from "lucide-react";
 import { toast } from "@/lib/toast";
+import { downloadText, slugify } from "@/lib/export";
 import { api } from "@/lib/api";
 import type { Note } from "@/lib/types";
 
@@ -113,6 +114,12 @@ function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
     }
   }
 
+  function exportNote() {
+    const title = note.title || "Untitled note";
+    const md = `# ${title}\n\n${note.content || ""}\n`;
+    downloadText(`${slugify(title)}.md`, md);
+  }
+
   return (
     <div
       className="flex flex-col gap-2 p-4 rounded-lg border"
@@ -133,6 +140,15 @@ function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={exportNote}
+            disabled={busy}
+            className="p-1.5 rounded transition-opacity hover:opacity-80 disabled:opacity-40"
+            style={{ color: "var(--muted-foreground)" }}
+            title="Download as Markdown"
+          >
+            <Download size={13} />
+          </button>
           <button
             onClick={saveAsMemory}
             disabled={busy}

@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   MessageSquare, Bot, Telescope, Columns2, FileText, StickyNote,
-  CheckSquare, Brain, Mail, CalendarDays, Sparkles, BarChart3,
+  CheckSquare, Brain, Mail, CalendarDays, Sparkles, BarChart3, Star,
   Settings, Plus, Search, CornerDownLeft,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -38,6 +38,7 @@ const COMMANDS: Cmd[] = [
   { id: "tasks", label: "Go to Tasks", icon: CheckSquare, path: "/tasks", keywords: "todo" },
   { id: "memory", label: "Go to Memory", icon: Brain, path: "/memory", keywords: "remember facts rag" },
   { id: "prompts", label: "Go to Prompts", icon: Sparkles, path: "/prompts", keywords: "saved templates library" },
+  { id: "starred", label: "Go to Starred", icon: Star, path: "/starred", keywords: "favorites pinned messages" },
   { id: "email", label: "Go to Email", icon: Mail, path: "/email", keywords: "inbox imap mail" },
   { id: "calendar", label: "Go to Calendar", icon: CalendarDays, path: "/calendar", keywords: "events caldav schedule" },
   { id: "stats", label: "Go to Stats", icon: BarChart3, path: "/stats", keywords: "counts numbers metrics export" },
