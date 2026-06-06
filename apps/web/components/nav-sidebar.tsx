@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   MessageSquare,
   Bot,
@@ -81,12 +82,13 @@ export function NavSidebar() {
       </ul>
 
       {/* Footer */}
-      <div className="px-4 pt-4 flex flex-col gap-1" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
-        <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>
+      <div className="px-2 pt-3 flex flex-col gap-1" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
+        <ThemeToggle />
+        <p className="text-[11px] px-2" style={{ color: "var(--muted-foreground)" }}>
           <kbd className="font-sans">⌘K</kbd> <span className="opacity-60">/</span>{" "}
           <kbd className="font-sans">Ctrl K</kbd> for commands
         </p>
-        <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+        <p className="text-xs px-2" style={{ color: "var(--muted-foreground)" }}>
           Lantern v0.1
         </p>
       </div>

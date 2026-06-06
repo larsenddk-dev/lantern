@@ -26,8 +26,29 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Dark theme tokens. Applied when the user explicitly picks Dark (html.dark),
+   or — in System mode (no explicit class) — when the OS prefers dark. A user
+   choice of Light (html.light) always wins over the OS preference. */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --muted: #1c1c1e;
+  --muted-foreground: #a1a1aa;
+  --border: #27272a;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+  --sidebar-bg: #111111;
+  --sidebar-border: #27272a;
+  --sidebar-item-hover: #1c1c1e;
+  --sidebar-item-active: #27272a;
+  --sidebar-item-active-text: #fafafa;
+  --sidebar-text: #a1a1aa;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light) {
     --background: #0a0a0a;
     --foreground: #ededed;
     --muted: #1c1c1e;
