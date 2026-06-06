@@ -77,3 +77,31 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+@keyframes app-reveal {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.992);
+    filter: brightness(0.88) blur(3px);
+  }
+  55% {
+    opacity: 1;
+    filter: brightness(1.04) blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: brightness(1) blur(0);
+  }
+}
+
+.app-reveal {
+  animation: app-reveal 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: center center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-reveal {
+    animation: none;
+  }
+}

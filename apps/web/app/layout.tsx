@@ -5,6 +5,7 @@ import { StartupGate } from "@/components/startup-gate";
 import { CommandPalette } from "@/components/command-palette";
 import { ShortcutsHelp } from "@/components/shortcuts-help";
 import { Toaster } from "@/components/toaster";
+import { AppReveal } from "@/components/app-reveal";
 import "./globals.css";
 import "highlight.js/styles/github-dark.css";
 
@@ -45,15 +46,17 @@ export default function RootLayout({
       </head>
       <body className="h-full overflow-hidden">
         <StartupGate>
-          <div className="h-full flex flex-row">
-            <NavSidebar />
-            <main className="flex-1 overflow-auto h-full">
-              {children}
-            </main>
-            <CommandPalette />
-            <ShortcutsHelp />
-          </div>
-          <Toaster />
+          <AppReveal>
+            <div className="h-full flex flex-row">
+              <NavSidebar />
+              <main className="flex-1 overflow-auto h-full">
+                {children}
+              </main>
+              <CommandPalette />
+              <ShortcutsHelp />
+            </div>
+            <Toaster />
+          </AppReveal>
         </StartupGate>
       </body>
     </html>
