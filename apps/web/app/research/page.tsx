@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Telescope, Play, ChevronDown, ChevronRight, FileText, Brain } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ResearchResponse } from "@/lib/types";
+import { Markdown } from "@/components/markdown";
 
 export default function ResearchPage() {
   const [question, setQuestion] = useState("");
@@ -114,10 +115,8 @@ export default function ResearchPage() {
             </div>
 
             {/* Report */}
-            <article className="rounded-md border p-4" style={{ borderColor: "var(--border)" }}>
-              <p className="text-sm whitespace-pre-wrap break-words leading-relaxed" style={{ color: "var(--foreground)" }}>
-                {result.report}
-              </p>
+            <article className="rounded-md border p-4 text-sm" style={{ borderColor: "var(--border)", color: "var(--foreground)" }}>
+              <Markdown>{result.report}</Markdown>
             </article>
           </div>
         )}

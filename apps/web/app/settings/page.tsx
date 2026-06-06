@@ -1,4 +1,5 @@
 import { ProviderSettings } from "@/components/provider-settings";
+import { EmbeddingsSettings } from "@/components/embeddings-settings";
 
 export default function SettingsPage() {
   return (
@@ -15,8 +16,10 @@ export default function SettingsPage() {
         </p>
       </header>
 
-      <div className="flex-1 px-8 py-6 max-w-2xl">
+      <div className="flex-1 px-8 py-6 max-w-2xl flex flex-col gap-8">
         <ProviderSettings />
+        <div style={{ borderTop: "1px solid var(--border)" }} />
+        <EmbeddingsSettings />
       </div>
     </div>
   );

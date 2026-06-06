@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Plus, MessageSquare, Loader2 } from "lucide-react";
+import { Send, Plus, MessageSquare, Loader2, Square, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { Session, Message, Provider } from "@/lib/types";
 import { ProviderSwitcher } from "@/components/provider-switcher";
+import { Markdown } from "@/components/markdown";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,9 +49,9 @@ function MessageBubble({ msg }: { msg: StreamingMessage }) {
     >
       <div
         className={cn(
-          "max-w-[72%] px-4 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words",
+          "max-w-[72%] px-4 py-2 rounded-2xl text-sm leading-relaxed break-words",
           isUser
-            ? "rounded-br-sm"
+            ? "rounded-br-sm whitespace-pre-wrap"
             : "rounded-bl-sm"
         )}
         style={
@@ -65,7 +66,7 @@ function MessageBubble({ msg }: { msg: StreamingMessage }) {
               }
         }
       >
-        {msg.content}
+        {isUser ? msg.content : <Markdown>{msg.content}</Markdown>}
         {msg.streaming && (
           <span
             className="inline-block w-1.5 h-4 ml-1 align-middle animate-pulse"
@@ -120,6 +121,7 @@ export function ChatShell() {
   const [error, setError] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false);
   const [activeProvider, setActiveProvider] = useState<Provider | null>(null);
+  const [useContext, setUseContext] = useState(true);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -239,6 +241,7 @@ export function ChatShell() {
         abort.signal,
         activeProvider?.id,
         activeProvider?.model,
+        useContext,
       );
     } catch (e) {
       if ((e as Error)?.name !== "AbortError") {
@@ -249,8 +252,16 @@ export function ChatShell() {
     } finally {
       setIsStreaming(false);
       abortRef.current = null;
+      // Clear any lingering streaming cursor (e.g. after a manual stop).
+      setMessages((prev) =>
+        prev.map((m) => (m.streaming ? { ...m, streaming: false } : m))
+      );
     }
-  }, [input, isStreaming, activeSessionId]);
+  }, [input, isStreaming, activeSessionId, useContext]);
+
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -329,6 +340,25 @@ export function ChatShell() {
                 "Chat")
               : "Chat"}
           </span>
+          <button
+            type="button"
+            onClick={() => setUseContext((v) => !v)}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors shrink-0"
+            style={{
+              background: useContext ? "var(--muted)" : "transparent",
+              color: useContext ? "var(--foreground)" : "var(--muted-foreground)",
+              border: "1px solid var(--border)",
+            }}
+            title={
+              useContext
+                ? "Knowledge context ON — pinned memories + retrieved notes/docs are injected"
+                : "Knowledge context OFF — plain chat, no retrieval"
+            }
+            aria-pressed={useContext}
+          >
+            <Brain size={13} aria-hidden="true" />
+            {useContext ? "Context" : "No context"}
+          </button>
           <ProviderSwitcher onProviderChange={setActiveProvider} />
         </header>
 
@@ -402,17 +432,18 @@ export function ChatShell() {
               aria-label="Chat message"
             />
             <button
-              onClick={handleSend}
-              disabled={!input.trim() || isStreaming}
+              onClick={isStreaming ? handleStop : handleSend}
+              disabled={!isStreaming && !input.trim()}
               className="shrink-0 p-1.5 rounded-lg transition-opacity disabled:opacity-30"
               style={{
                 background: "var(--primary)",
                 color: "var(--primary-foreground)",
               }}
-              aria-label="Send message"
+              aria-label={isStreaming ? "Stop generating" : "Send message"}
+              title={isStreaming ? "Stop generating" : "Send message"}
             >
               {isStreaming ? (
-                <Loader2 size={16} className="animate-spin" />
+                <Square size={14} fill="currentColor" />
               ) : (
                 <Send size={16} />
               )}

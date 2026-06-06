@@ -76,10 +76,12 @@ export const api = {
     signal?: AbortSignal,
     providerId?: string,
     model?: string,
+    useContext: boolean = true,
   ): Promise<void> {
-    const body: Record<string, string> = { session_id: sessionId, message };
+    const body: Record<string, unknown> = { session_id: sessionId, message };
     if (providerId) body.provider_id = providerId;
     if (model) body.model = model;
+    if (!useContext) body.use_context = false;
 
     const res = await fetch(`${BASE_URL}/chat`, {
       method: "POST",
