@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check } from "lucide-react";
+import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { Session, Message, Provider } from "@/lib/types";
@@ -92,28 +92,83 @@ function SessionItem({
   session,
   active,
   onClick,
+  onRename,
+  onDelete,
 }: {
   session: Session;
   active: boolean;
   onClick: () => void;
+  onRename: (id: string, title: string) => void;
+  onDelete: (id: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(session.title);
+
+  function commit() {
+    setEditing(false);
+    const t = draft.trim();
+    if (t && t !== session.title) onRename(session.id, t);
+    else setDraft(session.title);
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          else if (e.key === "Escape") {
+            setDraft(session.title);
+            setEditing(false);
+          }
+        }}
+        className="w-full px-3 py-2 rounded-md text-xs outline-none"
+        style={{ background: "var(--muted)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+        aria-label="Rename conversation"
+      />
+    );
+  }
+
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full text-left px-3 py-2 rounded-md text-xs truncate transition-colors",
-        active ? "font-semibold" : "hover:opacity-80"
-      )}
-      style={{
-        background: active ? "var(--sidebar-item-active)" : "transparent",
-        color: active
-          ? "var(--sidebar-item-active-text)"
-          : "var(--sidebar-text)",
-      }}
-      title={session.title}
-    >
-      {session.title}
-    </button>
+    <div className="group/sess flex items-center gap-0.5">
+      <button
+        onClick={onClick}
+        className={cn(
+          "flex-1 min-w-0 text-left px-3 py-2 rounded-md text-xs truncate transition-colors",
+          active ? "font-semibold" : "hover:opacity-80"
+        )}
+        style={{
+          background: active ? "var(--sidebar-item-active)" : "transparent",
+          color: active ? "var(--sidebar-item-active-text)" : "var(--sidebar-text)",
+        }}
+        title={session.title}
+      >
+        {session.title}
+      </button>
+      <div className="flex items-center opacity-0 group-hover/sess:opacity-100 transition-opacity shrink-0">
+        <button
+          onClick={() => { setDraft(session.title); setEditing(true); }}
+          className="p-1 rounded hover:opacity-80"
+          style={{ color: "var(--muted-foreground)" }}
+          title="Rename"
+          aria-label="Rename conversation"
+        >
+          <Pencil size={11} />
+        </button>
+        <button
+          onClick={() => onDelete(session.id)}
+          className="p-1 rounded hover:opacity-80"
+          style={{ color: "var(--muted-foreground)" }}
+          title="Delete"
+          aria-label="Delete conversation"
+        >
+          <Trash2 size={11} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -182,6 +237,33 @@ export function ChatShell() {
       setError(e instanceof Error ? e.message : "Failed to create session");
     }
   }, []);
+
+  const handleRenameSession = useCallback(async (id: string, title: string) => {
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, title } : s)));
+    try {
+      await api.renameSession(id, title);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to rename conversation");
+      api.listSessions().then(setSessions).catch(() => {});
+    }
+  }, []);
+
+  const handleDeleteSession = useCallback(
+    async (id: string) => {
+      if (!confirm("Delete this conversation? This cannot be undone.")) return;
+      try {
+        await api.deleteSession(id);
+        setSessions((prev) => prev.filter((s) => s.id !== id));
+        if (activeSessionId === id) {
+          setActiveSessionId(null);
+          setMessages([]);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to delete conversation");
+      }
+    },
+    [activeSessionId],
+  );
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
@@ -331,6 +413,8 @@ export function ChatShell() {
                 onClick={() => {
                   if (s.id !== activeSessionId) loadSession(s.id);
                 }}
+                onRename={handleRenameSession}
+                onDelete={handleDeleteSession}
               />
             ))
           )}

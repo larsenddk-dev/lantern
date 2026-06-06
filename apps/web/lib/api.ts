@@ -65,6 +65,18 @@ export const api = {
     return request(`/sessions/${id}`);
   },
 
+  renameSession(id: string, title: string): Promise<Session> {
+    return request(`/sessions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+  },
+
+  deleteSession(id: string): Promise<{ ok: boolean }> {
+    return request(`/sessions/${id}`, { method: "DELETE" });
+  },
+
   /**
    * Stream a chat reply. Calls the callback for each delta string, and once
    * more with null when the stream ends.

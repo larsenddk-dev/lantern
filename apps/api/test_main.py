@@ -84,6 +84,33 @@ def test_get_session_not_found():
     assert resp.status_code == 404
 
 
+def test_rename_session():
+    sid = client.post("/sessions", json={"title": "Before"}).json()["id"]
+    resp = client.patch(f"/sessions/{sid}", json={"title": "After"})
+    assert resp.status_code == 200
+    assert resp.json()["title"] == "After"
+    listed = client.get("/sessions").json()
+    assert any(s["id"] == sid and s["title"] == "After" for s in listed)
+
+
+def test_rename_session_not_found():
+    resp = client.patch("/sessions/nope", json={"title": "x"})
+    assert resp.status_code == 404
+
+
+def test_delete_session():
+    sid = client.post("/sessions", json={"title": "To delete"}).json()["id"]
+    resp = client.delete(f"/sessions/{sid}")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    assert client.get(f"/sessions/{sid}").status_code == 404
+
+
+def test_delete_session_not_found():
+    resp = client.delete("/sessions/nope")
+    assert resp.status_code == 404
+
+
 def test_chat_streaming_and_session_history(monkeypatch):
     """End-to-end: create session, send message, verify streaming chunks,
     then reload session and confirm both messages are stored."""

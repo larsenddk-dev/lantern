@@ -195,6 +195,30 @@ def db_append_message(session_id: str, role: str, content: str) -> dict:
     return {"id": msg_id, "session_id": session_id, "role": role, "content": content, "created_at": now}
 
 
+def db_delete_session(session_id: str) -> bool:
+    with _get_conn() as conn:
+        exists = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if exists is None:
+            return False
+        conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    return True
+
+
+def db_rename_session(session_id: str, title: str) -> Optional[dict]:
+    now = _now_iso()
+    with _get_conn() as conn:
+        exists = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if exists is None:
+            return None
+        conn.execute(
+            "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
+            (title, now, session_id),
+        )
+        row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return dict(row)
+
+
 # ---------------------------------------------------------------------------
 # Notes helpers
 # ---------------------------------------------------------------------------
@@ -1093,6 +1117,10 @@ class CreateSessionRequest(BaseModel):
     title: str = "New conversation"
 
 
+class RenameSessionRequest(BaseModel):
+    title: str
+
+
 class ChatRequest(BaseModel):
     session_id: str
     message: str
@@ -1194,6 +1222,21 @@ def get_session(session_id: str):
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@app.patch("/sessions/{session_id}")
+def rename_session(session_id: str, body: RenameSessionRequest):
+    session = db_rename_session(session_id, body.title.strip() or "Untitled")
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+@app.delete("/sessions/{session_id}")
+def delete_session(session_id: str):
+    if not db_delete_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
