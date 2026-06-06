@@ -1,8 +1,44 @@
 "use client";
 
+import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
+
+/** A fenced code block with a hover "Copy" button. */
+function CodeBlock({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(ref.current?.innerText ?? "");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+  return (
+    <div className="relative my-2 group/code">
+      <button
+        onClick={copy}
+        className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] opacity-0 group-hover/code:opacity-100 transition-opacity"
+        style={{ background: "var(--background)", border: "1px solid var(--border)", color: "var(--muted-foreground)" }}
+        title="Copy code"
+        aria-label="Copy code"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <pre
+        ref={ref}
+        className="p-3 rounded-md overflow-x-auto text-[0.85em] leading-relaxed"
+        style={{ background: "color-mix(in srgb, var(--foreground) 6%, transparent)", border: "1px solid var(--border)" }}
+      >
+        {children}
+      </pre>
+    </div>
+  );
+}
 
 /**
  * Shared markdown renderer for assistant chat replies and research reports.
@@ -80,17 +116,7 @@ export function Markdown({ children }: { children: string }) {
               </code>
             );
           },
-          pre: ({ children }) => (
-            <pre
-              className="my-2 p-3 rounded-md overflow-x-auto text-[0.85em] leading-relaxed"
-              style={{
-                background: "color-mix(in srgb, var(--foreground) 6%, transparent)",
-                border: "1px solid var(--border)",
-              }}
-            >
-              {children}
-            </pre>
-          ),
+          pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
           table: ({ children }) => (
             <div className="my-2 overflow-x-auto">
               <table className="w-full text-left border-collapse text-[0.95em]">{children}</table>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download } from "lucide-react";
+import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { Session, Message, Provider } from "@/lib/types";
@@ -41,30 +41,27 @@ function formatTime(iso: string): string {
 
 function MessageBubble({ msg }: { msg: StreamingMessage }) {
   const isUser = msg.role === "user";
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
   return (
-    <div
-      className={cn(
-        "flex w-full",
-        isUser ? "justify-end" : "justify-start"
-      )}
-    >
+    <div className={cn("group flex flex-col w-full", isUser ? "items-end" : "items-start")}>
       <div
         className={cn(
           "max-w-[72%] px-4 py-2 rounded-2xl text-sm leading-relaxed break-words",
-          isUser
-            ? "rounded-br-sm whitespace-pre-wrap"
-            : "rounded-bl-sm"
+          isUser ? "rounded-br-sm whitespace-pre-wrap" : "rounded-bl-sm"
         )}
         style={
           isUser
-            ? {
-                background: "var(--primary)",
-                color: "var(--primary-foreground)",
-              }
-            : {
-                background: "var(--muted)",
-                color: "var(--foreground)",
-              }
+            ? { background: "var(--primary)", color: "var(--primary-foreground)" }
+            : { background: "var(--muted)", color: "var(--foreground)" }
         }
       >
         {isUser ? msg.content : <Markdown>{msg.content}</Markdown>}
@@ -76,6 +73,17 @@ function MessageBubble({ msg }: { msg: StreamingMessage }) {
           />
         )}
       </div>
+      {!msg.streaming && msg.content.trim() && (
+        <button
+          onClick={copy}
+          className="flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[11px] opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ color: "var(--muted-foreground)" }}
+          title="Copy message"
+        >
+          {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      )}
     </div>
   );
 }
