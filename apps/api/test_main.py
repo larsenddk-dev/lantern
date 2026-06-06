@@ -988,3 +988,37 @@ def test_agent_web_search_with_stubbed_results(monkeypatch):
     monkeypatch.setattr(main, "chat_with_tools", _stub_tools)
     resp = client.post("/agent", json={"message": "search alpha"}).json()
     assert "Result A" in resp["steps"][0]["result"]
+
+
+# ---------------------------------------------------------------------------
+# Tests — Email (read-only IMAP; not configured in tests)
+# ---------------------------------------------------------------------------
+
+
+def test_email_not_configured_by_default():
+    assert main.email_configured() is False
+    body = client.get("/email").json()
+    assert body["configured"] is False
+    assert body["emails"] == []
+    assert "note" in body
+
+
+def test_email_get_and_triage_unconfigured():
+    one = client.get("/email/123").json()
+    assert one["configured"] is False
+    triage = client.post("/email/123/triage").json()
+    assert triage["configured"] is False
+
+
+def test_email_triage_uses_provider(monkeypatch):
+    # Pretend configured + stub the IMAP fetch and the LLM call (fully offline).
+    monkeypatch.setattr(main, "email_configured", lambda: True)
+    monkeypatch.setattr(main, "fetch_email_body", lambda uid: {
+        "configured": True, "uid": uid, "subject": "Invoice due",
+        "from": "billing@example.com", "body": "Your invoice is due Friday.",
+    })
+    monkeypatch.setattr(main, "complete_chat_once",
+                        lambda messages, **kw: "Invoice due Friday.\nAction needed")
+    resp = client.post("/email/42/triage").json()
+    assert resp["configured"] is True
+    assert "Action needed" in resp["summary"]

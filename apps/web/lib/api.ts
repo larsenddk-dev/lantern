@@ -30,6 +30,10 @@ import type {
   ResearchFinding,
   ResearchSource,
   SearchHit,
+  EmailListResponse,
+  EmailMeta,
+  EmailDetail,
+  EmailTriage,
 } from "./types";
 import { toast } from "./toast";
 
@@ -363,6 +367,22 @@ export const api = {
   search(query: string): Promise<{ results: SearchHit[] }> {
     return request(`/search?q=${encodeURIComponent(query)}`);
   },
+
+  // ---------------------------------------------------------------------------
+  // Email (read-only IMAP)
+  // ---------------------------------------------------------------------------
+
+  listEmail(): Promise<EmailListResponse> {
+    return request("/email");
+  },
+
+  getEmail(uid: string): Promise<EmailDetail> {
+    return request(`/email/${encodeURIComponent(uid)}`);
+  },
+
+  triageEmail(uid: string): Promise<EmailTriage> {
+    return request(`/email/${encodeURIComponent(uid)}/triage`, { method: "POST" });
+  },
 };
 
 export type {
@@ -376,4 +396,5 @@ export type {
   AgentResponse, AgentStep,
   ResearchResponse, ResearchFinding, ResearchSource,
   SearchHit,
+  EmailListResponse, EmailMeta, EmailDetail, EmailTriage,
 };

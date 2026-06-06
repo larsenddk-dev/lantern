@@ -14,6 +14,7 @@ import {
   StickyNote,
   CheckSquare,
   Brain,
+  Mail,
   Settings,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/notes", label: "Notes", icon: StickyNote },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/memory", label: "Memory", icon: Brain },
+  { href: "/email", label: "Email", icon: Mail },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

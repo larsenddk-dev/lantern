@@ -202,3 +202,39 @@ export interface SearchHit {
   snippet: string;
   path: string;
 }
+
+// ---------------------------------------------------------------------------
+// Email (read-only IMAP)
+// ---------------------------------------------------------------------------
+
+export interface EmailMeta {
+  uid: string;
+  subject: string;
+  from: string;
+  date: string;
+}
+
+export interface EmailListResponse {
+  configured: boolean;
+  emails: EmailMeta[];
+  note?: string;
+  error?: string;
+}
+
+export interface EmailDetail {
+  configured: boolean;
+  uid?: string;
+  subject?: string;
+  from?: string;
+  date?: string;
+  body?: string;
+  error?: string;
+}
+
+export interface EmailTriage {
+  configured: boolean;
+  uid?: string;
+  summary?: string;
+  note?: string;
+  error?: string;
+}

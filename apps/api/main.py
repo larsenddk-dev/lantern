@@ -9,6 +9,9 @@ import math
 import shutil
 import ast
 import operator
+import imaplib
+import email as emaillib
+from email.header import decode_header
 from contextlib import asynccontextmanager
 
 import httpx
@@ -31,6 +34,11 @@ LANTERN_WEB_ORIGIN = os.environ.get("LANTERN_WEB_ORIGIN", "http://localhost:3000
 # Optional web search (Tavily). Build-time integration; activate by setting the
 # key in .env — same pattern as the AI provider keys (the app never stores it).
 LANTERN_TAVILY_API_KEY = os.environ.get("LANTERN_TAVILY_API_KEY", "")
+# Optional read-only email (IMAP). Env-keyed; the app never stores credentials.
+LANTERN_IMAP_HOST = os.environ.get("LANTERN_IMAP_HOST", "")
+LANTERN_IMAP_PORT = int(os.environ.get("LANTERN_IMAP_PORT", "993"))
+LANTERN_IMAP_USER = os.environ.get("LANTERN_IMAP_USER", "")
+LANTERN_IMAP_PASSWORD = os.environ.get("LANTERN_IMAP_PASSWORD", "")
 
 # ---------------------------------------------------------------------------
 # DB path — always stored in a gitignored data/ dir relative to this file,
@@ -1167,6 +1175,118 @@ def db_search(q: str, limit: int = 20) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Email — read-only IMAP (list / view / AI triage). Env-keyed; no sending.
+# ---------------------------------------------------------------------------
+
+def email_configured() -> bool:
+    return bool(LANTERN_IMAP_HOST and LANTERN_IMAP_USER and LANTERN_IMAP_PASSWORD)
+
+
+def _decode_header(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    out = ""
+    for text, enc in decode_header(value):
+        if isinstance(text, bytes):
+            out += text.decode(enc or "utf-8", errors="replace")
+        else:
+            out += text
+    return out
+
+
+def _email_text_body(msg) -> str:
+    """Best-effort plain-text body from an email message (prefers text/plain)."""
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.get_content_type() == "text/plain" and "attachment" not in str(part.get("Content-Disposition", "")):
+                payload = part.get_payload(decode=True)
+                if payload:
+                    return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+        # fall back to any text/* part
+        for part in msg.walk():
+            if part.get_content_type().startswith("text/"):
+                payload = part.get_payload(decode=True)
+                if payload:
+                    return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+        return ""
+    payload = msg.get_payload(decode=True)
+    return payload.decode(msg.get_content_charset() or "utf-8", errors="replace") if payload else ""
+
+
+def _imap_connect():
+    M = imaplib.IMAP4_SSL(LANTERN_IMAP_HOST, LANTERN_IMAP_PORT)
+    M.login(LANTERN_IMAP_USER, LANTERN_IMAP_PASSWORD)
+    M.select("INBOX", readonly=True)  # read-only: Lantern never modifies the mailbox
+    return M
+
+
+def fetch_emails(limit: int = 20) -> dict:
+    """List recent inbox messages (headers only). Never raises."""
+    if not email_configured():
+        return {"configured": False, "emails": [],
+                "note": "Email not configured. Set LANTERN_IMAP_HOST/USER/PASSWORD in .env."}
+    try:
+        M = _imap_connect()
+        try:
+            _typ, data = M.search(None, "ALL")
+            ids = data[0].split()
+            recent = ids[-limit:][::-1]
+            emails = []
+            for i in recent:
+                _t, msgdata = M.fetch(i, "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])")
+                msg = emaillib.message_from_bytes(msgdata[0][1])
+                emails.append({
+                    "uid": i.decode(),
+                    "subject": _decode_header(msg.get("Subject")) or "(no subject)",
+                    "from": _decode_header(msg.get("From")),
+                    "date": msg.get("Date", ""),
+                })
+            return {"configured": True, "emails": emails}
+        finally:
+            M.logout()
+    except Exception as e:
+        return {"configured": True, "emails": [], "error": str(e)[:200]}
+
+
+def fetch_email_body(uid: str) -> dict:
+    """Fetch one message's text body (read-only). Never raises."""
+    if not email_configured():
+        return {"configured": False}
+    try:
+        M = _imap_connect()
+        try:
+            _t, msgdata = M.fetch(uid.encode(), "(BODY.PEEK[])")
+            if not msgdata or not msgdata[0]:
+                return {"configured": True, "error": "message not found"}
+            msg = emaillib.message_from_bytes(msgdata[0][1])
+            return {
+                "configured": True,
+                "uid": uid,
+                "subject": _decode_header(msg.get("Subject")) or "(no subject)",
+                "from": _decode_header(msg.get("From")),
+                "date": msg.get("Date", ""),
+                "body": _email_text_body(msg)[:20000],
+            }
+        finally:
+            M.logout()
+    except Exception as e:
+        return {"configured": True, "error": str(e)[:200]}
+
+
+def email_triage(subject: str, body: str) -> str:
+    """Summarize + categorize an email using the active chat provider."""
+    base_url, api_key, model = db_resolve_provider()
+    prompt = [
+        {"role": "system", "content": (
+            "Summarize the email in 1-2 sentences, then on a new line give a "
+            "category: one of [Action needed, FYI, Newsletter, Personal, Spam]."
+        )},
+        {"role": "user", "content": f"Subject: {subject}\n\n{body[:6000]}"},
+    ]
+    return complete_chat_once(prompt, base_url=base_url, api_key=api_key, model=model)
+
+
+# ---------------------------------------------------------------------------
 # Lifespan — init DB once on startup
 # ---------------------------------------------------------------------------
 
@@ -1657,6 +1777,34 @@ def search(q: str = "", limit: int = 20):
     if not q:
         return {"results": []}
     return {"results": db_search(q, max(1, min(limit, 50)))}
+
+
+# ---------------------------------------------------------------------------
+# Email routes — read-only IMAP
+# ---------------------------------------------------------------------------
+
+@app.get("/email")
+def email_list(limit: int = 20):
+    """List recent inbox messages (read-only)."""
+    return fetch_emails(max(1, min(limit, 50)))
+
+
+@app.get("/email/{uid}")
+def email_get(uid: str):
+    """Fetch one message's text body (read-only)."""
+    return fetch_email_body(uid)
+
+
+@app.post("/email/{uid}/triage")
+def email_triage_route(uid: str):
+    """AI summary + category for one message."""
+    msg = fetch_email_body(uid)
+    if not msg.get("configured"):
+        return {"configured": False, "note": "Email not configured."}
+    if msg.get("error"):
+        return {"configured": True, "error": msg["error"]}
+    summary = email_triage(msg.get("subject", ""), msg.get("body", ""))
+    return {"configured": True, "uid": uid, "summary": summary}
 
 
 # ---------------------------------------------------------------------------

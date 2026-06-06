@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   MessageSquare, Bot, Telescope, Columns2, FileText, StickyNote,
-  CheckSquare, Brain, Settings, Plus, Search, CornerDownLeft,
+  CheckSquare, Brain, Mail, Settings, Plus, Search, CornerDownLeft,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { SearchHit } from "@/lib/types";
@@ -36,11 +36,12 @@ const COMMANDS: Cmd[] = [
   { id: "notes", label: "Go to Notes", icon: StickyNote, path: "/notes" },
   { id: "tasks", label: "Go to Tasks", icon: CheckSquare, path: "/tasks", keywords: "todo" },
   { id: "memory", label: "Go to Memory", icon: Brain, path: "/memory", keywords: "remember facts rag" },
+  { id: "email", label: "Go to Email", icon: Mail, path: "/email", keywords: "inbox imap mail" },
   { id: "settings", label: "Go to Settings", icon: Settings, path: "/settings", keywords: "providers embeddings api key" },
 ];
 
-// Cmd/Ctrl + 1..9 jump targets (mirrors the nav sidebar order).
-const NAV_PATHS = ["/chat", "/agent", "/research", "/compare", "/documents", "/notes", "/tasks", "/memory", "/settings"];
+// Cmd/Ctrl + 1..9 jump targets (mirrors the nav sidebar order; Settings is 10th, reachable via search).
+const NAV_PATHS = ["/chat", "/agent", "/research", "/compare", "/documents", "/notes", "/tasks", "/memory", "/email"];
 
 /**
  * Global ⌘K / Ctrl+K command palette — fuzzy-search and jump anywhere.
