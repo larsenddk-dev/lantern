@@ -58,7 +58,7 @@ Afkryds (`[x]`) efterhånden. Rytme: **byg → test → commit + push** pr. opga
 
 ## 🔒 Parkeret — kræver DIG (credentials / certifikater / tungt)
 - [x] **Email (IMAP, read-only + AI-triage)** — bygget env-styret; aktivér med `LANTERN_IMAP_*` i `.env`. (Send er bevidst *ikke* med.)
-- [ ] **Calendar (CalDAV, read-only)** — kan bygges env-styret som email (kræver `caldav`-dep + dine CalDAV-oplysninger i `.env`).
+- [x] **Calendar (CalDAV, read-only)** — bygget env-styret; aktivér med `LANTERN_CALDAV_*` i `.env`.
 - [ ] **Cookbook (hardware-aware model serving)** — tungt; design-beslutninger.
 - [ ] **Image editor** — tungt.
 - [ ] **Code signing:** Windows Authenticode-cert + macOS Developer ID — så installerne ikke advarer brugeren.
