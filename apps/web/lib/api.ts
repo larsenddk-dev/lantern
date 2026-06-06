@@ -31,15 +31,24 @@ import type {
   ResearchSource,
   SearchHit,
 } from "./types";
+import { toast } from "./toast";
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_LANTERN_API_URL?.replace(/\/$/, "") ??
   "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, init);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, init);
+  } catch {
+    // Network/connection failure (e.g. backend not running).
+    toast(`Can't reach the Lantern backend (${path}).`);
+    throw new Error(`Network error reaching ${path}`);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    toast(`Request failed (${res.status}) on ${path}`);
     throw new Error(`API ${path} returned ${res.status}: ${text}`);
   }
   return res.json() as Promise<T>;
