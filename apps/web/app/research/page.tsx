@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Telescope, Play, ChevronDown, ChevronRight, FileText, Brain } from "lucide-react";
+import { Telescope, Play, ChevronDown, ChevronRight, FileText, Brain, Download } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ResearchResponse } from "@/lib/types";
 import { Markdown } from "@/components/markdown";
+import { downloadText, slugify } from "@/lib/export";
 
 export default function ResearchPage() {
   const [question, setQuestion] = useState("");
@@ -27,6 +28,12 @@ export default function ResearchPage() {
     } finally {
       setRunning(false);
     }
+  }
+
+  function exportReport() {
+    if (!result) return;
+    const md = `# Research: ${question}\n\n*Exported from Lantern*\n\n${result.report}\n`;
+    downloadText(`research-${slugify(question)}.md`, md);
   }
 
   return (
@@ -116,6 +123,18 @@ export default function ResearchPage() {
 
             {/* Report */}
             <article className="rounded-md border p-4 text-sm" style={{ borderColor: "var(--border)", color: "var(--foreground)" }}>
+              <div className="flex justify-end mb-2">
+                <button
+                  type="button"
+                  onClick={exportReport}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-opacity hover:opacity-80"
+                  style={{ color: "var(--muted-foreground)", border: "1px solid var(--border)" }}
+                  title="Export this report as Markdown"
+                >
+                  <Download size={13} aria-hidden="true" />
+                  Export
+                </button>
+              </div>
               <Markdown>{result.report}</Markdown>
             </article>
           </div>

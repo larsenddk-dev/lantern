@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { NavSidebar } from "@/components/nav-sidebar";
 import { StartupGate } from "@/components/startup-gate";
+import { CommandPalette } from "@/components/command-palette";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,6 +37,7 @@ export default function RootLayout({
             <main className="flex-1 overflow-auto h-full">
               {children}
             </main>
+            <CommandPalette />
           </div>
         </StartupGate>
       </body>

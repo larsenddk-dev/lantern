@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Plus, MessageSquare, Loader2, Square, Brain } from "lucide-react";
+import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { Session, Message, Provider } from "@/lib/types";
 import { ProviderSwitcher } from "@/components/provider-switcher";
 import { Markdown } from "@/components/markdown";
+import { chatToMarkdown, downloadText, slugify } from "@/lib/export";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -263,6 +264,12 @@ export function ChatShell() {
     abortRef.current?.abort();
   }, []);
 
+  function exportChat() {
+    const title =
+      (activeSessionId ? sessions.find((s) => s.id === activeSessionId)?.title : null) ?? "Chat";
+    downloadText(`${slugify(title)}.md`, chatToMarkdown(title, messages));
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -340,6 +347,18 @@ export function ChatShell() {
                 "Chat")
               : "Chat"}
           </span>
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={exportChat}
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-opacity hover:opacity-80 shrink-0"
+              style={{ color: "var(--muted-foreground)", border: "1px solid var(--border)" }}
+              title="Export this conversation as Markdown"
+            >
+              <Download size={13} aria-hidden="true" />
+              Export
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setUseContext((v) => !v)}

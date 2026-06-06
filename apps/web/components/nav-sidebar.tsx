@@ -81,7 +81,11 @@ export function NavSidebar() {
       </ul>
 
       {/* Footer */}
-      <div className="px-4 pt-4" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
+      <div className="px-4 pt-4 flex flex-col gap-1" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
+        <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>
+          <kbd className="font-sans">⌘K</kbd> <span className="opacity-60">/</span>{" "}
+          <kbd className="font-sans">Ctrl K</kbd> for commands
+        </p>
         <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
           Lantern v0.1
         </p>
