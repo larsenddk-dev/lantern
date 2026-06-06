@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { StickyNote, Plus, Trash2, Edit2, Check, X } from "lucide-react";
+import { StickyNote, Plus, Trash2, Edit2, Check, X, Brain } from "lucide-react";
+import { toast } from "@/lib/toast";
 import { api } from "@/lib/api";
 import type { Note } from "@/lib/types";
 
@@ -99,6 +100,19 @@ function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
     }
   }
 
+  async function saveAsMemory() {
+    setBusy(true);
+    try {
+      const text = [note.title, note.content].filter(Boolean).join(" — ");
+      await api.createMemory({ content: text || "(empty)" });
+      toast("Saved as memory", "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div
       className="flex flex-col gap-2 p-4 rounded-lg border"
@@ -119,6 +133,15 @@ function NoteCard({ note, onEdit, onDelete }: NoteCardProps) {
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={saveAsMemory}
+            disabled={busy}
+            className="p-1.5 rounded transition-opacity hover:opacity-80 disabled:opacity-40"
+            style={{ color: "var(--muted-foreground)" }}
+            title="Save as memory"
+          >
+            <Brain size={13} />
+          </button>
           <button
             onClick={() => onEdit(note)}
             disabled={busy}

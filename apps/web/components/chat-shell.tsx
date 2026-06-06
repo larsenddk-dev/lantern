@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2 } from "lucide-react";
+import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { Session, Message, Provider } from "@/lib/types";
@@ -18,6 +18,7 @@ interface StreamingMessage {
   role: "user" | "assistant";
   content: string;
   streaming?: boolean;
+  starred?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,7 +40,15 @@ function formatTime(iso: string): string {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function MessageBubble({ msg }: { msg: StreamingMessage }) {
+function MessageBubble({
+  msg,
+  onToggleStar,
+  onRetry,
+}: {
+  msg: StreamingMessage;
+  onToggleStar?: (id: string, starred: boolean) => void;
+  onRetry?: (id: string) => void;
+}) {
   const isUser = msg.role === "user";
   const [copied, setCopied] = useState(false);
   async function copy() {
@@ -51,6 +60,10 @@ function MessageBubble({ msg }: { msg: StreamingMessage }) {
       /* clipboard unavailable */
     }
   }
+  // Persisted messages have non-tmp ids (used to enable star / retry).
+  const persisted = !msg.id.startsWith("tmp-");
+  const canStar = persisted && !msg.streaming && msg.content.trim() && onToggleStar;
+  const canRetry = !isUser && persisted && !msg.streaming && onRetry;
   return (
     <div className={cn("group flex flex-col w-full", isUser ? "items-end" : "items-start")}>
       <div
@@ -74,15 +87,53 @@ function MessageBubble({ msg }: { msg: StreamingMessage }) {
         )}
       </div>
       {!msg.streaming && msg.content.trim() && (
-        <button
-          onClick={copy}
-          className="flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[11px] opacity-0 group-hover:opacity-100 transition-opacity"
-          style={{ color: "var(--muted-foreground)" }}
-          title="Copy message"
-        >
-          {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
-          {copied ? "Copied" : "Copy"}
-        </button>
+        <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={copy}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px]"
+            style={{ color: "var(--muted-foreground)" }}
+            title="Copy message"
+          >
+            {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+          {canStar && (
+            <button
+              onClick={() => onToggleStar(msg.id, !msg.starred)}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px]"
+              style={{ color: msg.starred ? "var(--primary)" : "var(--muted-foreground)" }}
+              title={msg.starred ? "Unstar message" : "Star message"}
+            >
+              <Star
+                size={11}
+                aria-hidden="true"
+                fill={msg.starred ? "currentColor" : "none"}
+              />
+              {msg.starred ? "Starred" : "Star"}
+            </button>
+          )}
+          {canRetry && (
+            <button
+              onClick={() => onRetry(msg.id)}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px]"
+              style={{ color: "var(--muted-foreground)" }}
+              title="Regenerate this reply"
+            >
+              <RefreshCw size={11} aria-hidden="true" />
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+      {/* Always-visible star indicator when starred */}
+      {!msg.streaming && msg.starred && !canStar && (
+        <Star
+          size={11}
+          aria-hidden="true"
+          fill="currentColor"
+          className="mt-1"
+          style={{ color: "var(--primary)" }}
+        />
       )}
     </div>
   );
@@ -210,19 +261,40 @@ export function ChatShell() {
     setLoadingSession(true);
     setError(null);
     try {
-      const detail = await api.getSession(id);
+      const [detail, starred] = await Promise.all([
+        api.getSession(id),
+        api.listStarredMessages().catch(() => []),
+      ]);
+      const starredIds = new Set(starred.map((m) => m.id));
       setActiveSessionId(id);
       setMessages(
         detail.messages.map((m: Message) => ({
           id: m.id,
           role: m.role,
           content: m.content,
+          starred: starredIds.has(m.id),
         }))
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load session");
     } finally {
       setLoadingSession(false);
+    }
+  }, []);
+
+  const handleToggleStar = useCallback(async (id: string, starred: boolean) => {
+    // Optimistic toggle
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, starred } : m))
+    );
+    try {
+      if (starred) await api.starMessage(id);
+      else await api.unstarMessage(id);
+    } catch {
+      // Revert on failure
+      setMessages((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, starred: !starred } : m))
+      );
     }
   }, []);
 
@@ -360,6 +432,60 @@ export function ChatShell() {
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
+
+  const handleRetry = useCallback(async (assistantId: string) => {
+    if (isStreaming || !activeSessionId) return;
+    // Find the user message that produced this assistant reply.
+    const idx = messages.findIndex((m) => m.id === assistantId);
+    if (idx <= 0) return;
+    let userIdx = idx - 1;
+    while (userIdx >= 0 && messages[userIdx].role !== "user") userIdx -= 1;
+    if (userIdx < 0) return;
+    const userText = messages[userIdx].content;
+
+    // Drop the assistant reply and stream a fresh one in its place.
+    const newAssistantId = `tmp-assistant-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev.slice(0, idx),
+      { id: newAssistantId, role: "assistant", content: "", streaming: true },
+    ]);
+    setIsStreaming(true);
+    const abort = new AbortController();
+    abortRef.current = abort;
+    try {
+      await api.streamChat(
+        activeSessionId,
+        userText,
+        (delta) => {
+          if (delta === null) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === newAssistantId ? { ...m, streaming: false } : m))
+            );
+          } else {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === newAssistantId ? { ...m, content: m.content + delta } : m
+              )
+            );
+          }
+        },
+        abort.signal,
+        activeProvider?.id,
+        activeProvider?.model,
+        useContext,
+      );
+    } catch (e) {
+      if ((e as Error)?.name !== "AbortError") {
+        setError(e instanceof Error ? e.message : "Retry failed");
+      }
+    } finally {
+      setIsStreaming(false);
+      abortRef.current = null;
+      setMessages((prev) =>
+        prev.map((m) => (m.streaming ? { ...m, streaming: false } : m))
+      );
+    }
+  }, [messages, isStreaming, activeSessionId, activeProvider, useContext]);
 
   function chatTitle() {
     return (activeSessionId ? sessions.find((s) => s.id === activeSessionId)?.title : null) ?? "Chat";
@@ -528,7 +654,12 @@ export function ChatShell() {
           ) : (
             <div className="flex flex-col gap-3 max-w-2xl mx-auto">
               {messages.map((m) => (
-                <MessageBubble key={m.id} msg={m} />
+                <MessageBubble
+                  key={m.id}
+                  msg={m}
+                  onToggleStar={handleToggleStar}
+                  onRetry={handleRetry}
+                />
               ))}
             </div>
           )}
