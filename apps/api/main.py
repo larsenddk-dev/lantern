@@ -1074,6 +1074,49 @@ def research_run(question: str, *, max_subquestions: int = 4) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Global search — across notes, tasks, documents, memories and chats
+# ---------------------------------------------------------------------------
+
+def db_search(q: str, limit: int = 20) -> list[dict]:
+    """Case-insensitive substring search across all content. Returns a unified
+    list of hits, each with type/id/title/snippet and the page to open."""
+    like = f"%{q}%"
+    out: list[dict] = []
+    with _get_conn() as conn:
+        for r in conn.execute(
+            "SELECT id, title, content FROM notes WHERE title LIKE ? OR content LIKE ? "
+            "ORDER BY updated_at DESC LIMIT ?", (like, like, limit),
+        ):
+            out.append({"type": "note", "id": r["id"], "title": r["title"] or "(untitled note)",
+                        "snippet": (r["content"] or "")[:120], "path": "/notes"})
+        for r in conn.execute(
+            "SELECT id, title, done FROM tasks WHERE title LIKE ? ORDER BY created_at DESC LIMIT ?",
+            (like, limit),
+        ):
+            out.append({"type": "task", "id": r["id"], "title": r["title"],
+                        "snippet": "done" if r["done"] else "to do", "path": "/tasks"})
+        for r in conn.execute(
+            "SELECT id, filename, extracted_text FROM documents WHERE filename LIKE ? OR extracted_text LIKE ? "
+            "ORDER BY created_at DESC LIMIT ?", (like, like, limit),
+        ):
+            out.append({"type": "document", "id": r["id"], "title": r["filename"],
+                        "snippet": (r["extracted_text"] or "")[:120], "path": "/documents"})
+        for r in conn.execute(
+            "SELECT id, content FROM memories WHERE content LIKE ? ORDER BY pinned DESC, updated_at DESC LIMIT ?",
+            (like, limit),
+        ):
+            out.append({"type": "memory", "id": r["id"], "title": (r["content"] or "")[:80],
+                        "snippet": "", "path": "/memory"})
+        for r in conn.execute(
+            "SELECT DISTINCT s.id, s.title FROM sessions s JOIN messages m ON m.session_id = s.id "
+            "WHERE m.content LIKE ? ORDER BY s.updated_at DESC LIMIT ?", (like, limit),
+        ):
+            out.append({"type": "chat", "id": r["id"], "title": r["title"] or "(conversation)",
+                        "snippet": "matching message", "path": "/chat"})
+    return out[:limit]
+
+
+# ---------------------------------------------------------------------------
 # Lifespan — init DB once on startup
 # ---------------------------------------------------------------------------
 
@@ -1551,6 +1594,19 @@ def research(body: ResearchRequest):
     """Plan sub-questions, gather from saved knowledge (RAG), synthesize a report."""
     n = max(1, min(body.max_subquestions, 6))
     return research_run(body.question, max_subquestions=n)
+
+
+# ---------------------------------------------------------------------------
+# Global search route
+# ---------------------------------------------------------------------------
+
+@app.get("/search")
+def search(q: str = "", limit: int = 20):
+    """Substring search across notes, tasks, documents, memories and chats."""
+    q = q.strip()
+    if not q:
+        return {"results": []}
+    return {"results": db_search(q, max(1, min(limit, 50)))}
 
 
 # ---------------------------------------------------------------------------

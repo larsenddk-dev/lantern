@@ -6,6 +6,16 @@ import {
   MessageSquare, Bot, Telescope, Columns2, FileText, StickyNote,
   CheckSquare, Brain, Settings, Plus, Search, CornerDownLeft,
 } from "lucide-react";
+import { api } from "@/lib/api";
+import type { SearchHit } from "@/lib/types";
+
+const HIT_ICON: Record<SearchHit["type"], React.ComponentType<{ size?: number }>> = {
+  note: StickyNote,
+  task: CheckSquare,
+  document: FileText,
+  memory: Brain,
+  chat: MessageSquare,
+};
 
 type Cmd = {
   id: string;
@@ -41,6 +51,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [hits, setHits] = useState<SearchHit[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -81,13 +92,40 @@ export function CommandPalette() {
     setActive(0);
   }, [query]);
 
+  // Debounced content search across notes/tasks/documents/memories/chats.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setHits([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const r = await api.search(q);
+        setHits(r.results);
+      } catch {
+        setHits([]);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const total = results.length + hits.length;
+
   if (!open) return null;
 
   function run(i: number) {
-    const cmd = results[i];
-    if (!cmd) return;
+    if (i < results.length) {
+      const cmd = results[i];
+      if (!cmd) return;
+      setOpen(false);
+      router.push(cmd.path);
+      return;
+    }
+    const hit = hits[i - results.length];
+    if (!hit) return;
     setOpen(false);
-    router.push(cmd.path);
+    router.push(hit.path);
   }
 
   return (
@@ -113,7 +151,7 @@ export function CommandPalette() {
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
-                setActive((a) => Math.min(a + 1, results.length - 1));
+                setActive((a) => Math.min(a + 1, total - 1));
               } else if (e.key === "ArrowUp") {
                 e.preventDefault();
                 setActive((a) => Math.max(a - 1, 0));
@@ -132,38 +170,83 @@ export function CommandPalette() {
           </kbd>
         </div>
         <ul className="max-h-80 overflow-y-auto py-1">
-          {results.length === 0 ? (
+          {total === 0 ? (
             <li className="px-3 py-3 text-sm" style={{ color: "var(--muted-foreground)" }}>
-              No commands match.
+              No matches.
             </li>
           ) : (
-            results.map((c, i) => {
-              const Icon = c.icon;
-              return (
-                <li key={c.id}>
-                  <button
-                    onMouseEnter={() => setActive(i)}
-                    onClick={() => run(i)}
-                    className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm"
-                    style={{
-                      background: i === active ? "var(--muted)" : "transparent",
-                      color: "var(--foreground)",
-                    }}
-                  >
-                    <Icon size={15} aria-hidden="true" />
-                    <span className="flex-1">{c.label}</span>
-                    {c.hint && (
-                      <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>
-                        {c.hint}
-                      </span>
-                    )}
-                    {i === active && (
-                      <CornerDownLeft size={13} style={{ color: "var(--muted-foreground)" }} aria-hidden="true" />
-                    )}
-                  </button>
+            <>
+              {results.map((c, i) => {
+                const Icon = c.icon;
+                return (
+                  <li key={c.id}>
+                    <button
+                      onMouseEnter={() => setActive(i)}
+                      onClick={() => run(i)}
+                      className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm"
+                      style={{
+                        background: i === active ? "var(--muted)" : "transparent",
+                        color: "var(--foreground)",
+                      }}
+                    >
+                      <Icon size={15} aria-hidden="true" />
+                      <span className="flex-1">{c.label}</span>
+                      {c.hint && (
+                        <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+                          {c.hint}
+                        </span>
+                      )}
+                      {i === active && (
+                        <CornerDownLeft size={13} style={{ color: "var(--muted-foreground)" }} aria-hidden="true" />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+
+              {hits.length > 0 && (
+                <li
+                  className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide"
+                  style={{ color: "var(--muted-foreground)" }}
+                  aria-hidden="true"
+                >
+                  Your content
                 </li>
-              );
-            })
+              )}
+              {hits.map((h, j) => {
+                const i = results.length + j;
+                const Icon = HIT_ICON[h.type] ?? Search;
+                return (
+                  <li key={`${h.type}-${h.id}`}>
+                    <button
+                      onMouseEnter={() => setActive(i)}
+                      onClick={() => run(i)}
+                      className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm"
+                      style={{
+                        background: i === active ? "var(--muted)" : "transparent",
+                        color: "var(--foreground)",
+                      }}
+                    >
+                      <Icon size={15} aria-hidden="true" />
+                      <span className="flex-1 min-w-0">
+                        <span className="block truncate">{h.title}</span>
+                        {h.snippet && (
+                          <span className="block truncate text-xs" style={{ color: "var(--muted-foreground)" }}>
+                            {h.snippet}
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-[10px] uppercase shrink-0" style={{ color: "var(--muted-foreground)" }}>
+                        {h.type}
+                      </span>
+                      {i === active && (
+                        <CornerDownLeft size={13} style={{ color: "var(--muted-foreground)" }} aria-hidden="true" />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </>
           )}
         </ul>
       </div>

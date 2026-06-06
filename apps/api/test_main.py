@@ -903,3 +903,29 @@ def test_parse_subquestions_fallback_for_non_json():
     subs = main._parse_subquestions("1. First sub question here\n2. Second sub question here", 4)
     assert len(subs) == 2
     assert subs[0].startswith("First sub question")
+
+
+# ---------------------------------------------------------------------------
+# Tests — Global search
+# ---------------------------------------------------------------------------
+
+
+def test_search_across_modules():
+    n = client.post("/notes", json={"title": "Zebra plan", "content": "about zebras"}).json()
+    t = client.post("/tasks", json={"title": "buy zebra food"}).json()
+    m = client.post("/memories", json={"content": "user likes zebras"}).json()
+
+    results = client.get("/search", params={"q": "zebra"}).json()["results"]
+    types = {r["type"] for r in results}
+    assert "note" in types
+    assert "task" in types
+    assert "memory" in types
+    assert all("path" in r and "title" in r for r in results)
+
+    client.delete(f"/notes/{n['id']}")
+    client.delete(f"/tasks/{t['id']}")
+    client.delete(f"/memories/{m['id']}")
+
+
+def test_search_empty_query_returns_empty():
+    assert client.get("/search", params={"q": "   "}).json()["results"] == []

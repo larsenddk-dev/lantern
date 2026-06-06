@@ -29,6 +29,7 @@ import type {
   ResearchResponse,
   ResearchFinding,
   ResearchSource,
+  SearchHit,
 } from "./types";
 
 const BASE_URL =
@@ -345,6 +346,14 @@ export const api = {
       body: JSON.stringify({ question, max_subquestions: maxSubquestions }),
     });
   },
+
+  // ---------------------------------------------------------------------------
+  // Global search
+  // ---------------------------------------------------------------------------
+
+  search(query: string): Promise<{ results: SearchHit[] }> {
+    return request(`/search?q=${encodeURIComponent(query)}`);
+  },
 };
 
 export type {
@@ -357,4 +366,5 @@ export type {
   CompareTarget, CompareResult,
   AgentResponse, AgentStep,
   ResearchResponse, ResearchFinding, ResearchSource,
+  SearchHit,
 };

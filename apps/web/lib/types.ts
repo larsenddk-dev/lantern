@@ -190,3 +190,15 @@ export interface ResearchResponse {
   findings: ResearchFinding[];
   report: string;
 }
+
+// ---------------------------------------------------------------------------
+// Global search
+// ---------------------------------------------------------------------------
+
+export interface SearchHit {
+  type: "note" | "task" | "document" | "memory" | "chat";
+  id: string;
+  title: string;
+  snippet: string;
+  path: string;
+}
