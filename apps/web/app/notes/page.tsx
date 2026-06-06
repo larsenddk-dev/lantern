@@ -196,6 +196,15 @@ export default function NotesPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [saving, setSaving] = useState(false);
+  const [filter, setFilter] = useState("");
+
+  const visibleNotes = filter.trim()
+    ? notes.filter((n) =>
+        ((n.title || "") + " " + (n.content || ""))
+          .toLowerCase()
+          .includes(filter.trim().toLowerCase()),
+      )
+    : notes;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -330,6 +339,18 @@ export default function NotesPage() {
           </div>
         )}
 
+        {/* Filter bar */}
+        {notes.length > 3 && (
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter notes…"
+            className="w-full mb-3 px-3 py-2 rounded-md text-sm border outline-none"
+            style={{ borderColor: "var(--border)", background: "var(--muted)", color: "var(--foreground)" }}
+          />
+        )}
+
         {/* Note list */}
         {loading ? (
           <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
@@ -342,9 +363,13 @@ export default function NotesPage() {
               No notes yet. Click &ldquo;New note&rdquo; to get started.
             </p>
           </div>
+        ) : visibleNotes.length === 0 ? (
+          <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+            No notes match &ldquo;{filter}&rdquo;.
+          </p>
         ) : (
           <div className="flex flex-col gap-3">
-            {notes.map((note) => (
+            {visibleNotes.map((note) => (
               <NoteCard
                 key={note.id}
                 note={note}
