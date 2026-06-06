@@ -28,6 +28,7 @@ ship as real-but-light modules / stubs that we deepen over later milestones:
 |---|---|
 | Chat | ✅ working (streaming, sessions, provider switching, RAG context) |
 | Agent + tools | ✅ working (knowledge search, notes, tasks, calculator) |
+| Research | ✅ working (plan → gather via RAG → synthesized report) |
 | Compare | ✅ working (one prompt → multiple models, side by side) |
 | Settings — AI Providers | ✅ working (add/edit/delete/activate; key masking) |
 | Notes | ✅ working (CRUD; persisted in SQLite) |
@@ -39,7 +40,8 @@ ship as real-but-light modules / stubs that we deepen over later milestones:
 ## Later milestones (parked)
 - **Email** (IMAP/SMTP + AI triage) — needs your account credentials.
 - **Calendar** (CalDAV) — needs your account credentials.
-- **Deep Research** — multi-step web research.
+- **Deep Research — web search** — current Research works over your saved
+  knowledge; adding live web search needs a search API key.
 - **Cookbook** (hardware-aware model serving) and **image editor** — heavier.
 - **Desktop polish** — installers/signing/notarization, auto-update, tray,
   faster sidecar start (`--onedir`); Windows `.exe` builds via the CI matrix.

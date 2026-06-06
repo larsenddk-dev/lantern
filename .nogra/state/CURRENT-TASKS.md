@@ -31,6 +31,9 @@ Updated: 2026-06-06T00:10Z
       35/35 pytest; live 200 vs Groq.
 - [x] Desktop build CI + PWA manifest (e639c9c): cross-platform tauri-action
       matrix (incl. Windows .exe) + app/manifest.ts. CI is a draft.
+- [x] Deep Research (c560796): plan → gather (RAG) → synthesized report over
+      saved knowledge; POST /research; Research nav + page. 37/37 pytest;
+      verified live in browser (4 sub-questions + structured report vs Groq).
 
 ## Active
 
