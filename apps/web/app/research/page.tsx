@@ -5,7 +5,7 @@ import { Telescope, Play, ChevronDown, ChevronRight, FileText, Brain, Download }
 import { api } from "@/lib/api";
 import type { ResearchResponse } from "@/lib/types";
 import { Markdown } from "@/components/markdown";
-import { downloadText, slugify } from "@/lib/export";
+import { downloadText, downloadPdf, slugify } from "@/lib/export";
 
 export default function ResearchPage() {
   const [question, setQuestion] = useState("");
@@ -34,6 +34,11 @@ export default function ResearchPage() {
     if (!result) return;
     const md = `# Research: ${question}\n\n*Exported from Lantern*\n\n${result.report}\n`;
     downloadText(`research-${slugify(question)}.md`, md);
+  }
+
+  function exportReportPdf() {
+    if (!result) return;
+    downloadPdf(`research-${slugify(question)}.pdf`, `Research: ${question}`, result.report);
   }
 
   return (
@@ -123,7 +128,7 @@ export default function ResearchPage() {
 
             {/* Report */}
             <article className="rounded-md border p-4 text-sm" style={{ borderColor: "var(--border)", color: "var(--foreground)" }}>
-              <div className="flex justify-end mb-2">
+              <div className="flex justify-end gap-2 mb-2">
                 <button
                   type="button"
                   onClick={exportReport}
@@ -132,7 +137,17 @@ export default function ResearchPage() {
                   title="Export this report as Markdown"
                 >
                   <Download size={13} aria-hidden="true" />
-                  Export
+                  .md
+                </button>
+                <button
+                  type="button"
+                  onClick={exportReportPdf}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-opacity hover:opacity-80"
+                  style={{ color: "var(--muted-foreground)", border: "1px solid var(--border)" }}
+                  title="Export this report as PDF"
+                >
+                  <Download size={13} aria-hidden="true" />
+                  .pdf
                 </button>
               </div>
               <Markdown>{result.report}</Markdown>

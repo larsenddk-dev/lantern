@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import type { Session, Message, Provider } from "@/lib/types";
 import { ProviderSwitcher } from "@/components/provider-switcher";
 import { Markdown } from "@/components/markdown";
-import { chatToMarkdown, downloadText, slugify } from "@/lib/export";
+import { chatToMarkdown, downloadText, downloadPdf, slugify } from "@/lib/export";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -354,10 +354,22 @@ export function ChatShell() {
     abortRef.current?.abort();
   }, []);
 
+  function chatTitle() {
+    return (activeSessionId ? sessions.find((s) => s.id === activeSessionId)?.title : null) ?? "Chat";
+  }
+
   function exportChat() {
-    const title =
-      (activeSessionId ? sessions.find((s) => s.id === activeSessionId)?.title : null) ?? "Chat";
+    const title = chatTitle();
     downloadText(`${slugify(title)}.md`, chatToMarkdown(title, messages));
+  }
+
+  function exportChatPdf() {
+    const title = chatTitle();
+    const body = messages
+      .filter((m) => m.content.trim())
+      .map((m) => `${m.role === "user" ? "You" : "Lantern"}:\n${m.content.trim()}`)
+      .join("\n\n");
+    downloadPdf(`${slugify(title)}.pdf`, title, body);
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -440,16 +452,28 @@ export function ChatShell() {
               : "Chat"}
           </span>
           {messages.length > 0 && (
-            <button
-              type="button"
-              onClick={exportChat}
-              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-opacity hover:opacity-80 shrink-0"
-              style={{ color: "var(--muted-foreground)", border: "1px solid var(--border)" }}
-              title="Export this conversation as Markdown"
-            >
-              <Download size={13} aria-hidden="true" />
-              Export
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={exportChat}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-opacity hover:opacity-80 shrink-0"
+                style={{ color: "var(--muted-foreground)", border: "1px solid var(--border)" }}
+                title="Export this conversation as Markdown"
+              >
+                <Download size={13} aria-hidden="true" />
+                .md
+              </button>
+              <button
+                type="button"
+                onClick={exportChatPdf}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-opacity hover:opacity-80 shrink-0"
+                style={{ color: "var(--muted-foreground)", border: "1px solid var(--border)" }}
+                title="Export this conversation as PDF"
+              >
+                <Download size={13} aria-hidden="true" />
+                .pdf
+              </button>
+            </>
           )}
           <button
             type="button"
