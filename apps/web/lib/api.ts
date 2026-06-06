@@ -34,6 +34,8 @@ import type {
   EmailMeta,
   EmailDetail,
   EmailTriage,
+  CalendarResponse,
+  CalendarEvent,
 } from "./types";
 import { toast } from "./toast";
 
@@ -383,6 +385,14 @@ export const api = {
   triageEmail(uid: string): Promise<EmailTriage> {
     return request(`/email/${encodeURIComponent(uid)}/triage`, { method: "POST" });
   },
+
+  // ---------------------------------------------------------------------------
+  // Calendar (read-only CalDAV)
+  // ---------------------------------------------------------------------------
+
+  listCalendar(days = 14): Promise<CalendarResponse> {
+    return request(`/calendar?days=${days}`);
+  },
 };
 
 export type {
@@ -397,4 +407,5 @@ export type {
   ResearchResponse, ResearchFinding, ResearchSource,
   SearchHit,
   EmailListResponse, EmailMeta, EmailDetail, EmailTriage,
+  CalendarResponse, CalendarEvent,
 };

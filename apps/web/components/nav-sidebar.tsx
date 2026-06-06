@@ -15,6 +15,7 @@ import {
   CheckSquare,
   Brain,
   Mail,
+  CalendarDays,
   Settings,
 } from "lucide-react";
 
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/memory", label: "Memory", icon: Brain },
   { href: "/email", label: "Email", icon: Mail },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

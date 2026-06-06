@@ -39,6 +39,10 @@ LANTERN_IMAP_HOST = os.environ.get("LANTERN_IMAP_HOST", "")
 LANTERN_IMAP_PORT = int(os.environ.get("LANTERN_IMAP_PORT", "993"))
 LANTERN_IMAP_USER = os.environ.get("LANTERN_IMAP_USER", "")
 LANTERN_IMAP_PASSWORD = os.environ.get("LANTERN_IMAP_PASSWORD", "")
+# Optional read-only calendar (CalDAV). Env-keyed; the app never stores creds.
+LANTERN_CALDAV_URL = os.environ.get("LANTERN_CALDAV_URL", "")
+LANTERN_CALDAV_USER = os.environ.get("LANTERN_CALDAV_USER", "")
+LANTERN_CALDAV_PASSWORD = os.environ.get("LANTERN_CALDAV_PASSWORD", "")
 
 # ---------------------------------------------------------------------------
 # DB path — always stored in a gitignored data/ dir relative to this file,
@@ -1287,6 +1291,61 @@ def email_triage(subject: str, body: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Calendar — read-only CalDAV (upcoming events). Env-keyed; no writes.
+# ---------------------------------------------------------------------------
+
+def calendar_configured() -> bool:
+    return bool(LANTERN_CALDAV_URL and LANTERN_CALDAV_USER and LANTERN_CALDAV_PASSWORD)
+
+
+def _ical_dt_to_iso(value) -> str:
+    try:
+        return value.isoformat()
+    except AttributeError:
+        return str(value)
+
+
+def fetch_events(days: int = 14) -> dict:
+    """List upcoming events from all CalDAV calendars (read-only). Never raises."""
+    if not calendar_configured():
+        return {"configured": False, "events": [],
+                "note": "Calendar not configured. Set LANTERN_CALDAV_URL/USER/PASSWORD in .env."}
+    try:
+        import caldav
+        from datetime import datetime, timedelta, timezone
+
+        client = caldav.DAVClient(
+            url=LANTERN_CALDAV_URL, username=LANTERN_CALDAV_USER, password=LANTERN_CALDAV_PASSWORD
+        )
+        principal = client.principal()
+        now = datetime.now(timezone.utc)
+        end = now + timedelta(days=days)
+        events = []
+        for cal in principal.calendars():
+            try:
+                found = cal.search(start=now, end=end, event=True, expand=True)
+            except Exception:
+                continue
+            for ev in found:
+                comp = getattr(ev, "icalendar_component", None)
+                if comp is None:
+                    continue
+                dtstart = comp.get("DTSTART")
+                dtend = comp.get("DTEND")
+                events.append({
+                    "summary": str(comp.get("SUMMARY", "(no title)")),
+                    "start": _ical_dt_to_iso(dtstart.dt) if dtstart else "",
+                    "end": _ical_dt_to_iso(dtend.dt) if dtend else "",
+                    "location": str(comp.get("LOCATION", "")) or None,
+                    "calendar": str(getattr(cal, "name", "") or ""),
+                })
+        events.sort(key=lambda e: e["start"])
+        return {"configured": True, "events": events}
+    except Exception as e:
+        return {"configured": True, "events": [], "error": str(e)[:200]}
+
+
+# ---------------------------------------------------------------------------
 # Lifespan — init DB once on startup
 # ---------------------------------------------------------------------------
 
@@ -1805,6 +1864,16 @@ def email_triage_route(uid: str):
         return {"configured": True, "error": msg["error"]}
     summary = email_triage(msg.get("subject", ""), msg.get("body", ""))
     return {"configured": True, "uid": uid, "summary": summary}
+
+
+# ---------------------------------------------------------------------------
+# Calendar route — read-only CalDAV
+# ---------------------------------------------------------------------------
+
+@app.get("/calendar")
+def calendar_list(days: int = 14):
+    """Upcoming events across CalDAV calendars (read-only)."""
+    return fetch_events(max(1, min(days, 90)))
 
 
 # ---------------------------------------------------------------------------

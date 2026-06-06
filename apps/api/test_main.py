@@ -1022,3 +1022,30 @@ def test_email_triage_uses_provider(monkeypatch):
     resp = client.post("/email/42/triage").json()
     assert resp["configured"] is True
     assert "Action needed" in resp["summary"]
+
+
+# ---------------------------------------------------------------------------
+# Tests — Calendar (read-only CalDAV; not configured in tests)
+# ---------------------------------------------------------------------------
+
+
+def test_calendar_not_configured_by_default():
+    assert main.calendar_configured() is False
+    body = client.get("/calendar").json()
+    assert body["configured"] is False
+    assert body["events"] == []
+    assert "note" in body
+
+
+def test_calendar_returns_events_when_stubbed(monkeypatch):
+    monkeypatch.setattr(main, "calendar_configured", lambda: True)
+    monkeypatch.setattr(main, "fetch_events", lambda days=14: {
+        "configured": True,
+        "events": [
+            {"summary": "Dentist", "start": "2026-06-10T09:00:00+00:00",
+             "end": "2026-06-10T09:30:00+00:00", "location": None, "calendar": "Personal"},
+        ],
+    })
+    body = client.get("/calendar").json()
+    assert body["configured"] is True
+    assert body["events"][0]["summary"] == "Dentist"

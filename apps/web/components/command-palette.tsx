@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   MessageSquare, Bot, Telescope, Columns2, FileText, StickyNote,
-  CheckSquare, Brain, Mail, Settings, Plus, Search, CornerDownLeft,
+  CheckSquare, Brain, Mail, CalendarDays, Settings, Plus, Search, CornerDownLeft,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { SearchHit } from "@/lib/types";
@@ -37,6 +37,7 @@ const COMMANDS: Cmd[] = [
   { id: "tasks", label: "Go to Tasks", icon: CheckSquare, path: "/tasks", keywords: "todo" },
   { id: "memory", label: "Go to Memory", icon: Brain, path: "/memory", keywords: "remember facts rag" },
   { id: "email", label: "Go to Email", icon: Mail, path: "/email", keywords: "inbox imap mail" },
+  { id: "calendar", label: "Go to Calendar", icon: CalendarDays, path: "/calendar", keywords: "events caldav schedule" },
   { id: "settings", label: "Go to Settings", icon: Settings, path: "/settings", keywords: "providers embeddings api key" },
 ];
 

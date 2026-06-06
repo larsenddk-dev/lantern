@@ -238,3 +238,22 @@ export interface EmailTriage {
   note?: string;
   error?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Calendar (read-only CalDAV)
+// ---------------------------------------------------------------------------
+
+export interface CalendarEvent {
+  summary: string;
+  start: string;
+  end: string;
+  location: string | null;
+  calendar: string;
+}
+
+export interface CalendarResponse {
+  configured: boolean;
+  events: CalendarEvent[];
+  note?: string;
+  error?: string;
+}
