@@ -431,6 +431,30 @@ export const api = {
   // Starred messages
   // ---------------------------------------------------------------------------
 
+  updateMessage(id: string, content: string): Promise<Message> {
+    return request(`/messages/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+  },
+
+  deleteMessage(id: string): Promise<{ ok: boolean }> {
+    return request(`/messages/${id}`, { method: "DELETE" });
+  },
+
+  generateTasks(payload: {
+    session_id?: string;
+    text?: string;
+    max_tasks?: number;
+  }): Promise<{ created: Task[]; count: number }> {
+    return request("/tasks/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
   starMessage(id: string): Promise<{ ok: boolean; starred: true }> {
     return request(`/messages/${id}/star`, { method: "POST" });
   },

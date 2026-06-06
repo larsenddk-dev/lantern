@@ -223,6 +223,45 @@ def db_append_message(session_id: str, role: str, content: str) -> dict:
     return {"id": msg_id, "session_id": session_id, "role": role, "content": content, "created_at": now}
 
 
+def db_update_message(message_id: str, content: str) -> Optional[dict]:
+    """Edit a stored message's content. Bumps the parent session's updated_at."""
+    now = _now_iso()
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM messages WHERE id = ?", (message_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
+            "UPDATE messages SET content = ? WHERE id = ?", (content, message_id)
+        )
+        conn.execute(
+            "UPDATE sessions SET updated_at = ? WHERE id = ?", (now, row["session_id"])
+        )
+        updated = conn.execute(
+            "SELECT * FROM messages WHERE id = ?", (message_id,)
+        ).fetchone()
+    return dict(updated)
+
+
+def db_delete_message(message_id: str) -> bool:
+    """Delete a single message. Its star (if any) cascades away."""
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT session_id FROM messages WHERE id = ?", (message_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        # FK cascade isn't enabled on this connection, so clear the star explicitly.
+        conn.execute("DELETE FROM message_stars WHERE message_id = ?", (message_id,))
+        conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+        conn.execute(
+            "UPDATE sessions SET updated_at = ? WHERE id = ?",
+            (_now_iso(), row["session_id"]),
+        )
+    return True
+
+
 def db_delete_session(session_id: str) -> bool:
     with _get_conn() as conn:
         exists = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
@@ -1179,6 +1218,43 @@ def _parse_subquestions(text: str, limit: int) -> list[str]:
     return subs[:limit]
 
 
+def _parse_task_titles(text: str, limit: int) -> list[str]:
+    """Tolerantly extract task titles from a model reply that should be a JSON
+    array of strings. Accepts arrays of objects ({title}/{task}) and falls back
+    to bullet/line parsing. Dedupes case-insensitively and caps at `limit`."""
+    titles: list[str] = []
+    try:
+        start = text.index("[")
+        end = text.rindex("]") + 1
+        arr = json.loads(text[start:end])
+        if isinstance(arr, list):
+            for item in arr:
+                if isinstance(item, str):
+                    titles.append(item.strip())
+                elif isinstance(item, dict):
+                    val = item.get("title") or item.get("task") or ""
+                    if val:
+                        titles.append(str(val).strip())
+    except (ValueError, json.JSONDecodeError):
+        pass
+    if not titles:
+        for line in text.splitlines():
+            cleaned = line.strip().lstrip("-*0123456789.) ").strip()
+            if len(cleaned) > 2:
+                titles.append(cleaned)
+    seen: set[str] = set()
+    result: list[str] = []
+    for t in titles:
+        t = t.strip().strip('"').strip()
+        key = t.lower()
+        if t and key not in seen:
+            seen.add(key)
+            result.append(t[:200])
+        if len(result) >= limit:
+            break
+    return result
+
+
 def research_run(question: str, *, max_subquestions: int = 4) -> dict:
     """Multi-step research over the user's saved knowledge (documents + memories)
     plus the model's own knowledge. Returns sub-questions, per-question sources,
@@ -1590,6 +1666,18 @@ class UpdatePromptRequest(BaseModel):
     content: Optional[str] = None
 
 
+class UpdateMessageRequest(BaseModel):
+    content: str
+
+
+class GenerateTasksRequest(BaseModel):
+    session_id: Optional[str] = None
+    text: Optional[str] = None
+    provider_id: Optional[str] = None
+    model: Optional[str] = None
+    max_tasks: int = 8
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -1752,6 +1840,55 @@ def list_tasks():
 def create_task(body: CreateTaskRequest):
     """Create a new task."""
     return db_create_task(title=body.title)
+
+
+@app.post("/tasks/generate")
+def generate_tasks(body: GenerateTasksRequest):
+    """Extract actionable to-do items from a chat session (or raw text) using the
+    LLM and create them. Returns the created task rows."""
+    source = ""
+    if body.text and body.text.strip():
+        source = body.text.strip()
+    elif body.session_id:
+        session = db_get_session(body.session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        source = "\n\n".join(
+            f"{m['role']}: {m['content']}" for m in session["messages"]
+        ).strip()
+    if not source:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide a session_id with messages or non-empty text",
+        )
+
+    base_url, api_key, model = db_resolve_provider(body.provider_id)
+    if body.model:
+        model = body.model
+
+    limit = max(1, min(body.max_tasks, 20))
+    system = (
+        "You extract concrete, actionable to-do items from a conversation. "
+        f"Return ONLY a JSON array of at most {limit} short task-title strings, "
+        'each an imperative phrase (e.g. "Email the supplier"). '
+        "No commentary, no numbering. If there are no clear tasks, return []."
+    )
+    try:
+        reply = complete_chat_once(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": source[:12000]},
+            ],
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+        )
+    except Exception as e:  # network / provider error
+        raise HTTPException(status_code=502, detail=f"Task generation failed: {e}")
+
+    titles = _parse_task_titles(reply, limit)
+    created = [db_create_task(title=t) for t in titles]
+    return {"created": created, "count": len(created)}
 
 
 @app.get("/tasks/{task_id}")
@@ -1918,6 +2055,21 @@ def delete_prompt(prompt_id: str):
 # ---------------------------------------------------------------------------
 # Starred-messages routes
 # ---------------------------------------------------------------------------
+
+@app.put("/messages/{message_id}")
+def update_message(message_id: str, body: UpdateMessageRequest):
+    result = db_update_message(message_id, body.content)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return result
+
+
+@app.delete("/messages/{message_id}")
+def delete_message(message_id: str):
+    if not db_delete_message(message_id):
+        raise HTTPException(status_code=404, detail="Message not found")
+    return {"ok": True}
+
 
 @app.post("/messages/{message_id}/star")
 def star_message(message_id: str):

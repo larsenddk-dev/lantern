@@ -1129,6 +1129,113 @@ def test_star_nonexistent_message_returns_404():
 
 
 # ---------------------------------------------------------------------------
+# Tests — Message edit / delete
+# ---------------------------------------------------------------------------
+
+
+def _seed_message(monkeypatch, title="edit-delete") -> tuple[str, str]:
+    """Create a session with one user + one assistant message; return
+    (session_id, first_message_id)."""
+    async def _fake_stream(*_a, **_kw):
+        yield "Hi"
+
+    monkeypatch.setattr(main, "stream_chat_completion", _fake_stream)
+    sess = client.post("/sessions", json={"title": title}).json()
+    with client.stream("POST", "/chat",
+                       json={"session_id": sess["id"], "message": "hello"}) as resp:
+        b"".join(resp.iter_bytes())
+    detail = client.get(f"/sessions/{sess['id']}").json()
+    return sess["id"], detail["messages"][0]["id"]
+
+
+def test_edit_message_updates_content(monkeypatch):
+    session_id, msg_id = _seed_message(monkeypatch)
+    resp = client.put(f"/messages/{msg_id}", json={"content": "edited text"})
+    assert resp.status_code == 200
+    assert resp.json()["content"] == "edited text"
+    # Persisted
+    detail = client.get(f"/sessions/{session_id}").json()
+    edited = next(m for m in detail["messages"] if m["id"] == msg_id)
+    assert edited["content"] == "edited text"
+
+
+def test_edit_message_not_found():
+    assert client.put("/messages/nope", json={"content": "x"}).status_code == 404
+
+
+def test_delete_message_removes_it(monkeypatch):
+    session_id, msg_id = _seed_message(monkeypatch)
+    assert client.delete(f"/messages/{msg_id}").json() == {"ok": True}
+    detail = client.get(f"/sessions/{session_id}").json()
+    assert all(m["id"] != msg_id for m in detail["messages"])
+
+
+def test_delete_message_not_found():
+    assert client.delete("/messages/nope").status_code == 404
+
+
+def test_delete_starred_message_clears_star(monkeypatch):
+    _, msg_id = _seed_message(monkeypatch)
+    client.post(f"/messages/{msg_id}/star")
+    client.delete(f"/messages/{msg_id}")
+    listed = client.get("/messages/starred").json()
+    assert all(m["id"] != msg_id for m in listed)
+
+
+# ---------------------------------------------------------------------------
+# Tests — AI-generate tasks from chat, offline stub
+# ---------------------------------------------------------------------------
+
+
+def test_generate_tasks_from_text(monkeypatch):
+    def _stub_complete(messages, **kwargs):
+        return '["Email the supplier", "Book the venue", "Email the supplier"]'
+
+    monkeypatch.setattr(main, "complete_chat_once", _stub_complete)
+    resp = client.post("/tasks/generate", json={"text": "we need to do stuff"})
+    assert resp.status_code == 200
+    body = resp.json()
+    # Duplicate is deduped → 2 created
+    assert body["count"] == 2
+    titles = [t["title"] for t in body["created"]]
+    assert "Email the supplier" in titles
+    assert "Book the venue" in titles
+    # Tasks really persisted
+    all_titles = [t["title"] for t in client.get("/tasks").json()]
+    assert "Book the venue" in all_titles
+
+
+def test_generate_tasks_from_session(monkeypatch):
+    session_id, _ = _seed_message(monkeypatch, title="gen-tasks")
+
+    def _stub_complete(messages, **kwargs):
+        return "```json\n[\"Follow up with Anna\"]\n```"
+
+    monkeypatch.setattr(main, "complete_chat_once", _stub_complete)
+    resp = client.post("/tasks/generate", json={"session_id": session_id})
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 1
+    assert resp.json()["created"][0]["title"] == "Follow up with Anna"
+
+
+def test_generate_tasks_requires_source():
+    assert client.post("/tasks/generate", json={}).status_code == 400
+
+
+def test_generate_tasks_unknown_session():
+    assert client.post(
+        "/tasks/generate", json={"session_id": "nope"}
+    ).status_code == 404
+
+
+def test_generate_tasks_empty_array(monkeypatch):
+    monkeypatch.setattr(main, "complete_chat_once", lambda *a, **k: "[]")
+    resp = client.post("/tasks/generate", json={"text": "nothing actionable"})
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 0
+
+
+# ---------------------------------------------------------------------------
 # Tests — Stats + export
 # ---------------------------------------------------------------------------
 

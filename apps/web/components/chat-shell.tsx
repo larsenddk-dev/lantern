@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw } from "lucide-react";
+import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw, Pause, Play, ListChecks, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { toast } from "@/lib/toast";
 import type { Session, Message, Provider } from "@/lib/types";
 import { ProviderSwitcher } from "@/components/provider-switcher";
 import { Markdown } from "@/components/markdown";
@@ -44,13 +45,20 @@ function MessageBubble({
   msg,
   onToggleStar,
   onRetry,
+  onEdit,
+  onDelete,
 }: {
   msg: StreamingMessage;
   onToggleStar?: (id: string, starred: boolean) => void;
   onRetry?: (id: string) => void;
+  onEdit?: (id: string, content: string) => Promise<void>;
+  onDelete?: (id: string) => void;
 }) {
   const isUser = msg.role === "user";
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(msg.content);
+  const [savingEdit, setSavingEdit] = useState(false);
   async function copy() {
     try {
       await navigator.clipboard.writeText(msg.content);
@@ -60,10 +68,67 @@ function MessageBubble({
       /* clipboard unavailable */
     }
   }
-  // Persisted messages have non-tmp ids (used to enable star / retry).
+  // Persisted messages have non-tmp ids (used to enable star / retry / edit / delete).
   const persisted = !msg.id.startsWith("tmp-");
   const canStar = persisted && !msg.streaming && msg.content.trim() && onToggleStar;
   const canRetry = !isUser && persisted && !msg.streaming && onRetry;
+  const canEdit = persisted && !msg.streaming && onEdit;
+  const canDelete = persisted && !msg.streaming && onDelete;
+
+  async function commitEdit() {
+    const next = draft.trim();
+    if (!onEdit || !next || next === msg.content) {
+      setEditing(false);
+      setDraft(msg.content);
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await onEdit(msg.id, next);
+      setEditing(false);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className={cn("group flex flex-col w-full gap-1", isUser ? "items-end" : "items-start")}>
+        <textarea
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={Math.min(10, Math.max(2, draft.split("\n").length))}
+          className="w-full max-w-[72%] px-3 py-2 rounded-2xl text-sm border outline-none resize-y"
+          style={{ borderColor: "var(--border)", background: "var(--muted)", color: "var(--foreground)" }}
+          aria-label="Edit message"
+        />
+        <div className="flex items-center gap-1">
+          <button
+            onClick={commitEdit}
+            disabled={savingEdit}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] disabled:opacity-40"
+            style={{ color: "var(--muted-foreground)" }}
+            title="Save edit"
+          >
+            <Check size={11} aria-hidden="true" />
+            {savingEdit ? "Saving…" : "Save"}
+          </button>
+          <button
+            onClick={() => { setEditing(false); setDraft(msg.content); }}
+            disabled={savingEdit}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] disabled:opacity-40"
+            style={{ color: "var(--muted-foreground)" }}
+            title="Cancel edit"
+          >
+            <X size={11} aria-hidden="true" />
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cn("group flex flex-col w-full", isUser ? "items-end" : "items-start")}>
       <div
@@ -97,6 +162,28 @@ function MessageBubble({
             {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
             {copied ? "Copied" : "Copy"}
           </button>
+          {canEdit && (
+            <button
+              onClick={() => { setDraft(msg.content); setEditing(true); }}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px]"
+              style={{ color: "var(--muted-foreground)" }}
+              title="Edit message"
+            >
+              <Pencil size={11} aria-hidden="true" />
+              Edit
+            </button>
+          )}
+          {canDelete && (
+            <button
+              onClick={() => onDelete(msg.id)}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px]"
+              style={{ color: "var(--muted-foreground)" }}
+              title="Delete message"
+            >
+              <Trash2 size={11} aria-hidden="true" />
+              Delete
+            </button>
+          )}
           {canStar && (
             <button
               onClick={() => onToggleStar(msg.id, !msg.starred)}
@@ -237,10 +324,16 @@ export function ChatShell() {
   const [loadingSession, setLoadingSession] = useState(false);
   const [activeProvider, setActiveProvider] = useState<Provider | null>(null);
   const [useContext, setUseContext] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
+  const [generatingTasks, setGeneratingTasks] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Pause/resume: while paused, incoming deltas accumulate here instead of
+  // rendering, and flush back into the message on resume / stream end.
+  const pausedRef = useRef(false);
+  const pendingRef = useRef("");
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -391,13 +484,21 @@ export function ChatShell() {
         text,
         (delta) => {
           if (delta === null) {
-            // Stream ended — mark done and refresh sessions list
+            // Stream ended — flush any paused buffer, mark done, refresh list
+            const buffered = pendingRef.current;
+            pendingRef.current = "";
+            pausedRef.current = false;
+            setIsPaused(false);
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantMsgId ? { ...m, streaming: false } : m
+                m.id === assistantMsgId
+                  ? { ...m, content: m.content + buffered, streaming: false }
+                  : m
               )
             );
             api.listSessions().then(setSessions).catch(() => {});
+          } else if (pausedRef.current) {
+            pendingRef.current += delta;
           } else {
             setMessages((prev) =>
               prev.map((m) =>
@@ -422,9 +523,15 @@ export function ChatShell() {
     } finally {
       setIsStreaming(false);
       abortRef.current = null;
-      // Clear any lingering streaming cursor (e.g. after a manual stop).
+      // Flush any buffered (paused) tokens and clear the streaming cursor.
+      const buffered = pendingRef.current;
+      pendingRef.current = "";
+      pausedRef.current = false;
+      setIsPaused(false);
       setMessages((prev) =>
-        prev.map((m) => (m.streaming ? { ...m, streaming: false } : m))
+        prev.map((m) =>
+          m.streaming ? { ...m, content: m.content + buffered, streaming: false } : m
+        )
       );
     }
   }, [input, isStreaming, activeSessionId, useContext]);
@@ -432,6 +539,69 @@ export function ChatShell() {
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
+
+  const handlePause = useCallback(() => {
+    pausedRef.current = true;
+    setIsPaused(true);
+  }, []);
+
+  const handleResume = useCallback(() => {
+    pausedRef.current = false;
+    setIsPaused(false);
+    // Flush whatever streamed in while paused into the active message.
+    const buffered = pendingRef.current;
+    pendingRef.current = "";
+    if (buffered) {
+      setMessages((prev) =>
+        prev.map((m) => (m.streaming ? { ...m, content: m.content + buffered } : m))
+      );
+    }
+  }, []);
+
+  const handleEditMessage = useCallback(async (id: string, content: string) => {
+    const prevContent = messages.find((m) => m.id === id)?.content;
+    // Optimistic update
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, content } : m)));
+    try {
+      await api.updateMessage(id, content);
+    } catch {
+      // Revert on failure
+      setMessages((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, content: prevContent ?? m.content } : m))
+      );
+      toast("Failed to edit message");
+    }
+  }, [messages]);
+
+  const handleDeleteMessage = useCallback(async (id: string) => {
+    if (!confirm("Delete this message? This cannot be undone.")) return;
+    const snapshot = messages;
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+    try {
+      await api.deleteMessage(id);
+    } catch {
+      setMessages(snapshot);
+      toast("Failed to delete message");
+    }
+  }, [messages]);
+
+  const handleGenerateTasks = useCallback(async () => {
+    if (!activeSessionId || generatingTasks) return;
+    setGeneratingTasks(true);
+    try {
+      const res = await api.generateTasks({ session_id: activeSessionId });
+      toast(
+        res.count > 0
+          ? `Created ${res.count} task${res.count === 1 ? "" : "s"} — see the Tasks page`
+          : "No actionable tasks found in this chat",
+        res.count > 0 ? "success" : undefined,
+      );
+    } catch {
+      toast("Couldn't generate tasks");
+    } finally {
+      setGeneratingTasks(false);
+    }
+  }, [activeSessionId, generatingTasks]);
 
   const handleRetry = useCallback(async (assistantId: string) => {
     if (isStreaming || !activeSessionId) return;
@@ -458,9 +628,19 @@ export function ChatShell() {
         userText,
         (delta) => {
           if (delta === null) {
+            const buffered = pendingRef.current;
+            pendingRef.current = "";
+            pausedRef.current = false;
+            setIsPaused(false);
             setMessages((prev) =>
-              prev.map((m) => (m.id === newAssistantId ? { ...m, streaming: false } : m))
+              prev.map((m) =>
+                m.id === newAssistantId
+                  ? { ...m, content: m.content + buffered, streaming: false }
+                  : m
+              )
             );
+          } else if (pausedRef.current) {
+            pendingRef.current += delta;
           } else {
             setMessages((prev) =>
               prev.map((m) =>
@@ -481,8 +661,14 @@ export function ChatShell() {
     } finally {
       setIsStreaming(false);
       abortRef.current = null;
+      const buffered = pendingRef.current;
+      pendingRef.current = "";
+      pausedRef.current = false;
+      setIsPaused(false);
       setMessages((prev) =>
-        prev.map((m) => (m.streaming ? { ...m, streaming: false } : m))
+        prev.map((m) =>
+          m.streaming ? { ...m, content: m.content + buffered, streaming: false } : m
+        )
       );
     }
   }, [messages, isStreaming, activeSessionId, activeProvider, useContext]);
@@ -584,6 +770,23 @@ export function ChatShell() {
                 "Chat")
               : "Chat"}
           </span>
+          {messages.length > 0 && activeSessionId && (
+            <button
+              type="button"
+              onClick={handleGenerateTasks}
+              disabled={generatingTasks}
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-opacity hover:opacity-80 disabled:opacity-40 shrink-0"
+              style={{ color: "var(--muted-foreground)", border: "1px solid var(--border)" }}
+              title="Extract actionable tasks from this conversation"
+            >
+              {generatingTasks ? (
+                <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <ListChecks size={13} aria-hidden="true" />
+              )}
+              Tasks
+            </button>
+          )}
           {messages.length > 0 && (
             <>
               <button
@@ -659,6 +862,8 @@ export function ChatShell() {
                   msg={m}
                   onToggleStar={handleToggleStar}
                   onRetry={handleRetry}
+                  onEdit={handleEditMessage}
+                  onDelete={handleDeleteMessage}
                 />
               ))}
             </div>
@@ -704,6 +909,17 @@ export function ChatShell() {
               style={{ color: "var(--foreground)" }}
               aria-label="Chat message"
             />
+            {isStreaming && (
+              <button
+                onClick={isPaused ? handleResume : handlePause}
+                className="shrink-0 p-1.5 rounded-lg transition-opacity hover:opacity-80"
+                style={{ color: "var(--foreground)", border: "1px solid var(--border)" }}
+                aria-label={isPaused ? "Resume generating" : "Pause generating"}
+                title={isPaused ? "Resume — show buffered text" : "Pause — hold incoming text"}
+              >
+                {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
+              </button>
+            )}
             <button
               onClick={isStreaming ? handleStop : handleSend}
               disabled={!isStreaming && !input.trim()}
