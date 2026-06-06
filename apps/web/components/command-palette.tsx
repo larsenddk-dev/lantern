@@ -29,6 +29,9 @@ const COMMANDS: Cmd[] = [
   { id: "settings", label: "Go to Settings", icon: Settings, path: "/settings", keywords: "providers embeddings api key" },
 ];
 
+// Cmd/Ctrl + 1..9 jump targets (mirrors the nav sidebar order).
+const NAV_PATHS = ["/chat", "/agent", "/research", "/compare", "/documents", "/notes", "/tasks", "/memory", "/settings"];
+
 /**
  * Global ⌘K / Ctrl+K command palette — fuzzy-search and jump anywhere.
  * Mounted once in the root layout.
@@ -45,13 +48,20 @@ export function CommandPalette() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setOpen((v) => !v);
+      } else if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) {
+        const path = NAV_PATHS[Number(e.key) - 1];
+        if (path) {
+          e.preventDefault();
+          setOpen(false);
+          router.push(path);
+        }
       } else if (e.key === "Escape") {
         setOpen(false);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (open) {
