@@ -40,15 +40,7 @@
   },
   "plugins": {
     "shell": {
-      "sidecar": true,
-      "open": false,
-      "scope": [
-        {
-          "name": "lantern-api",
-          "sidecar": true,
-          "args": true
-        }
-      ]
+      "open": false
     }
   }
 }
