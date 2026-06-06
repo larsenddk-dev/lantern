@@ -1067,7 +1067,19 @@ app = FastAPI(title="Lantern API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[LANTERN_WEB_ORIGIN, "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        LANTERN_WEB_ORIGIN,
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        # Tauri desktop webview origins — Windows WebView2 serves the app from
+        # http://tauri.localhost; macOS/Linux use tauri://localhost. Without
+        # these the packaged app's fetches fail CORS ("failed to fetch").
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
