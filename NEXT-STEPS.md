@@ -30,8 +30,9 @@ Afkryds (`[x]`) efterhånden. Rytme: **byg → test → commit + push** pr. opga
 - [x] **Drag-and-drop** filupload i Documents
 - [x] **Global søgning** (⌘K — noter/opgaver/dokumenter/memory/chats)
 - [x] **Command palette** (⌘K) + ⌘/Ctrl+1-9 genveje + copy-knapper + rename/delete chats + markdown-eksport
-- [ ] Fjern **Turbopack lockfile-advarsel** (sæt `turbopack.root` i `next.config.ts`, eller fjern den løse `~/package-lock.json`)
-- [ ] Resterende små UX-ting: fejl-toasts, flere tom-tilstande
+- [x] **Turbopack lockfile-advarsel** fjernet (`turbopack.root` pinnet)
+- [x] **Globale fejl-toasts** (lib/toast + Toaster; API-fejl vises app-wide)
+- [x] **Deep-link** fra søgeresultater (åbner den konkrete chat/dokument)
 
 ## 2. Desktop-polish + Windows `.exe`
 - [x] **Windows-`.exe` + `.msi` bygget** på Windows — app starter + spawner sidecar (verificeret). Launch-crash (ugyldig `plugins.shell.scope`) rettet.
@@ -46,17 +47,18 @@ Afkryds (`[x]`) efterhånden. Rytme: **byg → test → commit + push** pr. opga
 - [ ] **Hurtigere sidecar-start** (skift PyInstaller `--onefile` → `--onedir`; nu ~15-18s cold start)
 - [ ] **Code signing / notarization** (kræver certifikat — se nedenfor)
 
-## 3. Flere AI-funktioner (kan bygges uden credentials)
-- [ ] **Web search i Research** — kræver en search-API-nøgle (Brave/Tavily/Serp). Sæt en `web_search`-tool ind i agenten + research-pipelinen.
-- [ ] **Chat-historik-søgning** (søg på tværs af sessioner)
-- [ ] **Eksport** (gem chat/research-rapport som .md/.pdf)
+## 3. Flere AI-funktioner
+- [x] **Web search** (Tavily) — agent-`web_search`-tool, env-styret (sæt `LANTERN_TAVILY_API_KEY`)
+- [x] **Chat-historik-søgning** (del af global ⌘K-søgning)
+- [x] **Eksport** chat/research som **.md og .pdf**
 - [ ] **Prompt-bibliotek / gemte prompts**
+- [ ] **Web search også i Research-pipelinen** (nu kun som agent-værktøj)
 
 ---
 
 ## 🔒 Parkeret — kræver DIG (credentials / certifikater / tungt)
-- [ ] **Email (IMAP/SMTP + AI-triage)** — dine kontooplysninger. Bygges når du giver dem.
-- [ ] **Calendar (CalDAV)** — dine kontooplysninger.
+- [x] **Email (IMAP, read-only + AI-triage)** — bygget env-styret; aktivér med `LANTERN_IMAP_*` i `.env`. (Send er bevidst *ikke* med.)
+- [ ] **Calendar (CalDAV, read-only)** — kan bygges env-styret som email (kræver `caldav`-dep + dine CalDAV-oplysninger i `.env`).
 - [ ] **Cookbook (hardware-aware model serving)** — tungt; design-beslutninger.
 - [ ] **Image editor** — tungt.
 - [ ] **Code signing:** Windows Authenticode-cert + macOS Developer ID — så installerne ikke advarer brugeren.
