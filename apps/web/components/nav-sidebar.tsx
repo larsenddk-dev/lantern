@@ -16,6 +16,8 @@ import {
   Brain,
   Mail,
   CalendarDays,
+  Sparkles,
+  BarChart3,
   Settings,
 } from "lucide-react";
 
@@ -28,8 +30,10 @@ const navItems = [
   { href: "/notes", label: "Notes", icon: StickyNote },
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/memory", label: "Memory", icon: Brain },
+  { href: "/prompts", label: "Prompts", icon: Sparkles },
   { href: "/email", label: "Email", icon: Mail },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/stats", label: "Stats", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -89,8 +93,7 @@ export function NavSidebar() {
       <div className="px-2 pt-3 flex flex-col gap-1" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
         <ThemeToggle />
         <p className="text-[11px] px-2" style={{ color: "var(--muted-foreground)" }}>
-          <kbd className="font-sans">⌘K</kbd> <span className="opacity-60">/</span>{" "}
-          <kbd className="font-sans">Ctrl K</kbd> for commands
+          <kbd className="font-sans">⌘K</kbd> commands · <kbd className="font-sans">?</kbd> shortcuts
         </p>
         <p className="text-xs px-2" style={{ color: "var(--muted-foreground)" }}>
           Lantern v0.1

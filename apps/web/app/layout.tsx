@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { NavSidebar } from "@/components/nav-sidebar";
 import { StartupGate } from "@/components/startup-gate";
 import { CommandPalette } from "@/components/command-palette";
+import { ShortcutsHelp } from "@/components/shortcuts-help";
 import { Toaster } from "@/components/toaster";
 import "./globals.css";
 import "highlight.js/styles/github-dark.css";
@@ -50,6 +51,7 @@ export default function RootLayout({
               {children}
             </main>
             <CommandPalette />
+            <ShortcutsHelp />
           </div>
           <Toaster />
         </StartupGate>

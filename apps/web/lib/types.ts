@@ -257,3 +257,59 @@ export interface CalendarResponse {
   note?: string;
   error?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Prompts
+// ---------------------------------------------------------------------------
+
+export interface Prompt {
+  id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePromptPayload {
+  title?: string;
+  content?: string;
+}
+
+export interface UpdatePromptPayload {
+  title?: string;
+  content?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Starred messages
+// ---------------------------------------------------------------------------
+
+export interface StarredMessage {
+  id: string;
+  session_id: string;
+  session_title: string | null;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Stats
+// ---------------------------------------------------------------------------
+
+export interface Stats {
+  sessions: number;
+  messages: number;
+  messages_user: number;
+  messages_assistant: number;
+  notes: number;
+  tasks: number;
+  tasks_done: number;
+  documents: number;
+  memories: number;
+  memories_pinned: number;
+  prompts: number;
+  embeddings: number;
+  providers: number;
+  starred_messages: number;
+}

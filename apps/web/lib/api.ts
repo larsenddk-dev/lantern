@@ -36,6 +36,11 @@ import type {
   EmailTriage,
   CalendarResponse,
   CalendarEvent,
+  Prompt,
+  CreatePromptPayload,
+  UpdatePromptPayload,
+  StarredMessage,
+  Stats,
 } from "./types";
 import { toast } from "./toast";
 
@@ -393,7 +398,60 @@ export const api = {
   listCalendar(days = 14): Promise<CalendarResponse> {
     return request(`/calendar?days=${days}`);
   },
+
+  // ---------------------------------------------------------------------------
+  // Prompts
+  // ---------------------------------------------------------------------------
+
+  listPrompts(): Promise<Prompt[]> {
+    return request("/prompts");
+  },
+
+  createPrompt(payload: CreatePromptPayload): Promise<Prompt> {
+    return request("/prompts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updatePrompt(id: string, payload: UpdatePromptPayload): Promise<Prompt> {
+    return request(`/prompts/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  deletePrompt(id: string): Promise<{ ok: boolean }> {
+    return request(`/prompts/${id}`, { method: "DELETE" });
+  },
+
+  // ---------------------------------------------------------------------------
+  // Starred messages
+  // ---------------------------------------------------------------------------
+
+  starMessage(id: string): Promise<{ ok: boolean; starred: true }> {
+    return request(`/messages/${id}/star`, { method: "POST" });
+  },
+
+  unstarMessage(id: string): Promise<{ ok: boolean; starred: false }> {
+    return request(`/messages/${id}/star`, { method: "DELETE" });
+  },
+
+  listStarredMessages(): Promise<StarredMessage[]> {
+    return request("/messages/starred");
+  },
+
+  // ---------------------------------------------------------------------------
+  // Stats
+  // ---------------------------------------------------------------------------
+
+  stats(): Promise<Stats> {
+    return request("/stats");
+  },
 };
+
 
 export type {
   Session, SessionDetail, Message,
@@ -408,4 +466,6 @@ export type {
   SearchHit,
   EmailListResponse, EmailMeta, EmailDetail, EmailTriage,
   CalendarResponse, CalendarEvent,
+  Prompt, CreatePromptPayload, UpdatePromptPayload,
+  StarredMessage, Stats,
 };
