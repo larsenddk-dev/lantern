@@ -20,6 +20,7 @@ import {
   BarChart3,
   Star,
   Settings,
+  ChefHat,
 } from "lucide-react";
 
 const navItems = [
@@ -32,6 +33,7 @@ const navItems = [
   { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/memory", label: "Memory", icon: Brain },
   { href: "/prompts", label: "Prompts", icon: Sparkles },
+  { href: "/cookbook", label: "Cookbook", icon: ChefHat },
   { href: "/starred", label: "Starred", icon: Star },
   { href: "/email", label: "Email", icon: Mail },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },

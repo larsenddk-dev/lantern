@@ -41,6 +41,10 @@ import type {
   UpdatePromptPayload,
   StarredMessage,
   Stats,
+  CookbookStatus,
+  CookbookCatalog,
+  CookbookInstalledModel,
+  CookbookPullEvent,
 } from "./types";
 import { toast } from "./toast";
 
@@ -468,6 +472,82 @@ export const api = {
   },
 
   // ---------------------------------------------------------------------------
+  // Cookbook — local Ollama integration
+  // ---------------------------------------------------------------------------
+
+  cookbookStatus(): Promise<CookbookStatus> {
+    return request("/cookbook/status");
+  },
+
+  cookbookCatalog(): Promise<CookbookCatalog> {
+    return request("/cookbook/catalog");
+  },
+
+  cookbookInstalledModels(): Promise<{ models: CookbookInstalledModel[] }> {
+    return request("/cookbook/models");
+  },
+
+  /**
+   * Stream pull progress for a model. Calls onEvent for every Ollama event
+   * (status updates, byte counters), and once with null when the stream ends.
+   * Throws on transport-level errors; aborts cleanly if the AbortSignal fires.
+   */
+  async cookbookPull(
+    model: string,
+    onEvent: (event: CookbookPullEvent | null) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const res = await fetch(`${BASE_URL}/cookbook/pull`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model }),
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      throw new Error(`Pull returned ${res.status}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data: ")) continue;
+        const data = trimmed.slice("data: ".length);
+        if (data === "[DONE]") {
+          onEvent(null);
+          return;
+        }
+        try {
+          onEvent(JSON.parse(data) as CookbookPullEvent);
+        } catch {
+          /* skip malformed line */
+        }
+      }
+    }
+    onEvent(null);
+  },
+
+  cookbookUse(model: string, label?: string): Promise<Provider> {
+    return request("/cookbook/use", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, label }),
+    });
+  },
+
+  cookbookDeleteModel(model: string): Promise<{ ok: boolean }> {
+    return request(`/cookbook/models/${encodeURIComponent(model)}`, {
+      method: "DELETE",
+    });
+  },
+
+  // ---------------------------------------------------------------------------
   // Stats
   // ---------------------------------------------------------------------------
 
@@ -492,4 +572,5 @@ export type {
   CalendarResponse, CalendarEvent,
   Prompt, CreatePromptPayload, UpdatePromptPayload,
   StarredMessage, Stats,
+  CookbookStatus, CookbookCatalog, CookbookInstalledModel, CookbookPullEvent,
 };

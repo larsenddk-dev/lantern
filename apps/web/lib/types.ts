@@ -298,6 +298,58 @@ export interface StarredMessage {
 // Stats
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Cookbook (local Ollama integration)
+// ---------------------------------------------------------------------------
+
+export interface CookbookStatus {
+  running: boolean;
+  version?: string;
+  model_count?: number;
+  base_url?: string;
+  error?: string;
+}
+
+export interface CookbookHardware {
+  os: string;
+  cpu: string;
+  ram_gb: number;
+  gpu: string | null;
+  apple_silicon: boolean;
+}
+
+export type CookbookFit = "recommended" | "ok" | "tight" | "too_big" | "unknown";
+
+export interface CookbookModel {
+  id: string;
+  name: string;
+  size_gb: number;
+  min_ram_gb: number;
+  recommended_ram_gb: number;
+  tags: string[];
+  description: string;
+  fit: CookbookFit;
+}
+
+export interface CookbookCatalog {
+  hardware: CookbookHardware;
+  models: CookbookModel[];
+}
+
+export interface CookbookInstalledModel {
+  name: string;
+  size?: number;
+  modified_at?: string;
+  digest?: string;
+}
+
+export interface CookbookPullEvent {
+  status: string;
+  completed?: number;
+  total?: number;
+  error?: string;
+}
+
 export interface Stats {
   sessions: number;
   messages: number;

@@ -1533,6 +1533,237 @@ def fetch_events(days: int = 14) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Cookbook — local Ollama integration: hardware-aware model recommendations,
+# install/uninstall, and one-click "use this model as a provider".
+# ---------------------------------------------------------------------------
+
+OLLAMA_BASE_URL = os.environ.get("LANTERN_OLLAMA_URL", "http://127.0.0.1:11434")
+
+# Curated catalog. Each entry's `min_ram_gb` is the rough floor we'll let a
+# user comfortably run the model at; `recommended_ram_gb` is what we tag as
+# "good fit". Sizes are GB of the default quantization Ollama pulls.
+COOKBOOK_CATALOG: list[dict] = [
+    {"id": "llama3.2:1b", "name": "Llama 3.2 1B", "size_gb": 1.3,
+     "min_ram_gb": 4, "recommended_ram_gb": 8, "tags": ["tiny", "general"],
+     "description": "Tiny but surprisingly capable. Runs anywhere."},
+    {"id": "llama3.2:3b", "name": "Llama 3.2 3B", "size_gb": 2.0,
+     "min_ram_gb": 6, "recommended_ram_gb": 8, "tags": ["small", "general"],
+     "description": "Small and fast. A solid default on modest hardware."},
+    {"id": "phi3:mini", "name": "Phi-3 Mini", "size_gb": 2.3,
+     "min_ram_gb": 6, "recommended_ram_gb": 8, "tags": ["small", "reasoning"],
+     "description": "Microsoft's small reasoning model."},
+    {"id": "qwen2.5:7b", "name": "Qwen 2.5 7B", "size_gb": 4.7,
+     "min_ram_gb": 8, "recommended_ram_gb": 16, "tags": ["general", "reasoning"],
+     "description": "Strong reasoning and multilingual. A great all-rounder."},
+    {"id": "llama3.1:8b", "name": "Llama 3.1 8B", "size_gb": 4.9,
+     "min_ram_gb": 8, "recommended_ram_gb": 16, "tags": ["general", "popular"],
+     "description": "The default for most users. Balanced and well-tested."},
+    {"id": "mistral:7b", "name": "Mistral 7B", "size_gb": 4.4,
+     "min_ram_gb": 8, "recommended_ram_gb": 16, "tags": ["general"],
+     "description": "Reliable general-purpose model from Mistral."},
+    {"id": "gemma2:9b", "name": "Gemma 2 9B", "size_gb": 5.4,
+     "min_ram_gb": 10, "recommended_ram_gb": 16, "tags": ["general"],
+     "description": "Google's open model. Polite and helpful."},
+    {"id": "deepseek-coder-v2:16b", "name": "DeepSeek Coder V2 16B",
+     "size_gb": 8.9, "min_ram_gb": 16, "recommended_ram_gb": 24,
+     "tags": ["code"],
+     "description": "Specialist for code completion and refactoring."},
+    {"id": "llava:7b", "name": "LLaVA 7B", "size_gb": 4.7,
+     "min_ram_gb": 8, "recommended_ram_gb": 16, "tags": ["vision"],
+     "description": "Vision-capable: send it an image and ask about it."},
+    {"id": "mixtral:8x7b", "name": "Mixtral 8x7B", "size_gb": 26.4,
+     "min_ram_gb": 32, "recommended_ram_gb": 48, "tags": ["large", "general"],
+     "description": "Mixture-of-experts. Powerful but heavy."},
+    {"id": "llama3.1:70b", "name": "Llama 3.1 70B", "size_gb": 40.0,
+     "min_ram_gb": 48, "recommended_ram_gb": 64, "tags": ["large", "general"],
+     "description": "Top-tier quality. Needs a workstation or Apple Silicon Max."},
+]
+
+
+def detect_hardware() -> dict:
+    """Detect OS, CPU model, RAM, and any obvious GPU. Best-effort; never
+    raises. Returns shape: {os, cpu, ram_gb, gpu, apple_silicon}."""
+    import platform
+    info: dict = {
+        "os": platform.system().lower(),
+        "cpu": platform.processor() or platform.machine(),
+        "ram_gb": 0,
+        "gpu": None,
+        "apple_silicon": False,
+    }
+    # RAM
+    try:
+        if hasattr(os, "sysconf") and "SC_PHYS_PAGES" in os.sysconf_names:
+            info["ram_gb"] = round(
+                os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+                / (1024 ** 3),
+                1,
+            )
+        elif info["os"] == "windows":
+            import ctypes
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong),
+                            ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            stat = MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
+            info["ram_gb"] = round(stat.ullTotalPhys / (1024 ** 3), 1)
+    except Exception:
+        pass
+
+    # Apple Silicon — gives unified-memory GPU "for free"
+    if info["os"] == "darwin" and platform.machine() == "arm64":
+        info["apple_silicon"] = True
+        info["gpu"] = "Apple Silicon (unified memory)"
+        # Read a friendlier CPU name via sysctl.
+        try:
+            import subprocess
+            out = subprocess.run(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                capture_output=True, text=True, timeout=2,
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                info["cpu"] = out.stdout.strip()
+        except Exception:
+            pass
+
+    # NVIDIA via nvidia-smi (works on Win + Linux)
+    if not info["gpu"]:
+        try:
+            import subprocess
+            out = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=2,
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                info["gpu"] = out.stdout.strip().splitlines()[0]
+        except Exception:
+            pass
+
+    return info
+
+
+def cookbook_status() -> dict:
+    """Is Ollama reachable? Returns {running, version?, model_count?}.
+    Never raises; designed to be polled cheaply from the UI."""
+    try:
+        resp = httpx.get(f"{OLLAMA_BASE_URL}/api/version", timeout=2.0)
+        if resp.status_code != 200:
+            return {"running": False, "error": f"HTTP {resp.status_code}"}
+        version = resp.json().get("version", "")
+        tags = httpx.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3.0)
+        models = tags.json().get("models", []) if tags.status_code == 200 else []
+        return {
+            "running": True,
+            "version": version,
+            "model_count": len(models),
+            "base_url": OLLAMA_BASE_URL,
+        }
+    except Exception as e:
+        return {"running": False, "error": str(e)[:200]}
+
+
+def cookbook_list_installed() -> list[dict]:
+    """List models currently installed in Ollama. Returns the raw `models`
+    array from /api/tags, or [] on error."""
+    try:
+        resp = httpx.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3.0)
+        resp.raise_for_status()
+        return resp.json().get("models", [])
+    except Exception:
+        return []
+
+
+def cookbook_recommend(catalog: list[dict], ram_gb: float) -> list[dict]:
+    """Annotate each catalog entry with a `fit` rating relative to the caller's
+    RAM. fit ∈ {recommended, ok, tight, too_big}."""
+    out: list[dict] = []
+    for item in catalog:
+        if ram_gb <= 0:
+            fit = "unknown"
+        elif ram_gb >= item["recommended_ram_gb"]:
+            fit = "recommended"
+        elif ram_gb >= item["min_ram_gb"]:
+            fit = "ok"
+        elif ram_gb >= item["min_ram_gb"] * 0.75:
+            fit = "tight"
+        else:
+            fit = "too_big"
+        out.append({**item, "fit": fit})
+    return out
+
+
+async def cookbook_pull_stream(model: str) -> AsyncIterator[dict]:
+    """Stream pull progress from Ollama. Yields parsed JSON-line dicts, each
+    typically containing {status, digest?, completed?, total?}. Final event
+    has status='success' (or error)."""
+    async with httpx.AsyncClient(timeout=None) as client:
+        async with client.stream(
+            "POST",
+            f"{OLLAMA_BASE_URL}/api/pull",
+            json={"name": model, "stream": True},
+        ) as resp:
+            if resp.status_code != 200:
+                err = await resp.aread()
+                yield {"status": "error", "error": err.decode("utf-8", "ignore")[:500]}
+                return
+            async for line in resp.aiter_lines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+
+def cookbook_delete_model(model: str) -> bool:
+    """Uninstall a model from Ollama."""
+    try:
+        resp = httpx.request(
+            "DELETE",
+            f"{OLLAMA_BASE_URL}/api/delete",
+            json={"name": model},
+            timeout=10.0,
+        )
+        return resp.status_code in (200, 404)
+    except Exception:
+        return False
+
+
+def cookbook_install_as_provider(model: str, *, label: Optional[str] = None) -> dict:
+    """Create (or reuse) a provider row that points at the local Ollama for
+    the given model, and activate it. Idempotent: if a provider with the same
+    base_url + model exists it is reused."""
+    base_url = f"{OLLAMA_BASE_URL.rstrip('/')}/v1"
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM providers WHERE base_url = ? AND model = ?",
+            (base_url, model),
+        ).fetchone()
+    if row:
+        provider_id = row["id"]
+    else:
+        provider = db_create_provider(
+            label=label or f"Local · {model}",
+            base_url=base_url,
+            model=model,
+            api_key="ollama",  # Ollama ignores the key but our shim wants something
+        )
+        provider_id = provider["id"]
+    db_set_active_provider(provider_id)
+    raw = db_get_provider(provider_id)
+    return _provider_to_public(raw) if raw else {"id": provider_id}
+
+
+# ---------------------------------------------------------------------------
 # Lifespan — init DB once on startup
 # ---------------------------------------------------------------------------
 
@@ -1668,6 +1899,15 @@ class UpdatePromptRequest(BaseModel):
 
 class UpdateMessageRequest(BaseModel):
     content: str
+
+
+class CookbookPullRequest(BaseModel):
+    model: str
+
+
+class CookbookUseRequest(BaseModel):
+    model: str
+    label: Optional[str] = None
 
 
 class GenerateTasksRequest(BaseModel):
@@ -2049,6 +2289,78 @@ def update_prompt(prompt_id: str, body: UpdatePromptRequest):
 def delete_prompt(prompt_id: str):
     if not db_delete_prompt(prompt_id):
         raise HTTPException(status_code=404, detail="Prompt not found")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Cookbook routes — first-run model picker + local Ollama integration.
+# ---------------------------------------------------------------------------
+
+@app.get("/cookbook/status")
+def cookbook_status_route():
+    """Whether the local Ollama is running, and how many models are installed."""
+    return cookbook_status()
+
+
+@app.get("/cookbook/hardware")
+def cookbook_hardware_route():
+    """Best-effort hardware probe used to annotate model recommendations."""
+    return detect_hardware()
+
+
+@app.get("/cookbook/catalog")
+def cookbook_catalog_route():
+    """Curated list of models, annotated with a per-entry `fit` rating
+    relative to the host's RAM. Pure read; safe to poll."""
+    hw = detect_hardware()
+    return {
+        "hardware": hw,
+        "models": cookbook_recommend(COOKBOOK_CATALOG, hw.get("ram_gb", 0) or 0),
+    }
+
+
+@app.get("/cookbook/models")
+def cookbook_models_route():
+    """Models actually installed in the local Ollama."""
+    return {"models": cookbook_list_installed()}
+
+
+@app.post("/cookbook/pull")
+async def cookbook_pull_route(body: CookbookPullRequest):
+    """Stream the pull progress for a model as SSE. The frontend can show a
+    progress bar from `completed / total` and surface `status` for stage info."""
+    model = body.model.strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="model is required")
+
+    async def generate():
+        async for event in cookbook_pull_stream(model):
+            yield f"data: {json.dumps(event)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/cookbook/use")
+def cookbook_use_route(body: CookbookUseRequest):
+    """Create (or reuse) a provider pointing at the local Ollama for the given
+    model, and mark it active. Returns the public provider row."""
+    model = body.model.strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="model is required")
+    return cookbook_install_as_provider(model, label=body.label)
+
+
+@app.delete("/cookbook/models/{model:path}")
+def cookbook_delete_route(model: str):
+    """Uninstall a model from Ollama. The :path converter is used so tags like
+    `llama3.1:8b` (which contain a colon) survive routing."""
+    if not cookbook_delete_model(model):
+        raise HTTPException(status_code=502, detail="Ollama refused the delete")
     return {"ok": True}
 
 

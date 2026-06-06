@@ -1236,6 +1236,165 @@ def test_generate_tasks_empty_array(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Tests — Cookbook (local Ollama integration), httpx fully stubbed
+# ---------------------------------------------------------------------------
+
+
+class _FakeResp:
+    def __init__(self, status_code=200, payload=None, text=""):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def test_cookbook_status_running(monkeypatch):
+    def _get(url, **kwargs):
+        if url.endswith("/api/version"):
+            return _FakeResp(200, {"version": "0.30.6"})
+        if url.endswith("/api/tags"):
+            return _FakeResp(200, {"models": [{"name": "llama3.1:8b"}]})
+        return _FakeResp(404)
+    monkeypatch.setattr(main.httpx, "get", _get)
+    resp = client.get("/cookbook/status").json()
+    assert resp["running"] is True
+    assert resp["version"] == "0.30.6"
+    assert resp["model_count"] == 1
+
+
+def test_cookbook_status_not_running(monkeypatch):
+    def _boom(*a, **kw):
+        raise ConnectionError("ECONNREFUSED")
+    monkeypatch.setattr(main.httpx, "get", _boom)
+    resp = client.get("/cookbook/status").json()
+    assert resp["running"] is False
+    assert "error" in resp
+
+
+def test_cookbook_hardware_shape():
+    hw = client.get("/cookbook/hardware").json()
+    for key in ("os", "cpu", "ram_gb", "gpu", "apple_silicon"):
+        assert key in hw
+
+
+def test_cookbook_catalog_annotates_fit():
+    body = client.get("/cookbook/catalog").json()
+    assert "hardware" in body
+    assert isinstance(body["models"], list) and len(body["models"]) > 0
+    fits = {m["fit"] for m in body["models"]}
+    # On any plausible host, at least one of {recommended, ok, tight, too_big}
+    assert fits & {"recommended", "ok", "tight", "too_big", "unknown"}
+
+
+def test_cookbook_recommend_fit_buckets():
+    # Direct unit test of the rating logic
+    catalog = [{"id": "x", "min_ram_gb": 8, "recommended_ram_gb": 16}]
+    assert main.cookbook_recommend(catalog, 32)[0]["fit"] == "recommended"
+    assert main.cookbook_recommend(catalog, 10)[0]["fit"] == "ok"
+    assert main.cookbook_recommend(catalog, 7)[0]["fit"] == "tight"
+    assert main.cookbook_recommend(catalog, 4)[0]["fit"] == "too_big"
+    assert main.cookbook_recommend(catalog, 0)[0]["fit"] == "unknown"
+
+
+def test_cookbook_models_list(monkeypatch):
+    def _get(url, **kwargs):
+        return _FakeResp(200, {"models": [
+            {"name": "llama3.1:8b", "size": 4_900_000_000},
+        ]})
+    monkeypatch.setattr(main.httpx, "get", _get)
+    body = client.get("/cookbook/models").json()
+    assert body["models"][0]["name"] == "llama3.1:8b"
+
+
+def test_cookbook_pull_streams_progress(monkeypatch):
+    # Build a fake async stream that yields three JSON-lines events.
+    class _FakeStreamResp:
+        status_code = 200
+        async def aiter_lines(self):
+            for line in [
+                json.dumps({"status": "pulling manifest"}),
+                json.dumps({"status": "downloading", "completed": 500, "total": 1000}),
+                json.dumps({"status": "success"}),
+            ]:
+                yield line
+        async def aread(self):
+            return b""
+
+    class _FakeStreamCtx:
+        def __init__(self, resp): self.resp = resp
+        async def __aenter__(self): return self.resp
+        async def __aexit__(self, *a): return False
+
+    class _FakeAsyncClient:
+        def __init__(self, *a, **kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        def stream(self, method, url, **kwargs):
+            return _FakeStreamCtx(_FakeStreamResp())
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", _FakeAsyncClient)
+
+    with client.stream("POST", "/cookbook/pull",
+                       json={"model": "llama3.2:1b"}) as resp:
+        assert resp.status_code == 200
+        raw = b"".join(resp.iter_bytes()).decode()
+
+    data_lines = [l[len("data: "):] for l in raw.splitlines() if l.startswith("data: ")]
+    assert "[DONE]" in data_lines
+    parsed = [json.loads(l) for l in data_lines if l != "[DONE]"]
+    assert any(p.get("status") == "success" for p in parsed)
+    assert any(p.get("completed") == 500 for p in parsed)
+
+
+def test_cookbook_pull_requires_model():
+    assert client.post("/cookbook/pull", json={"model": ""}).status_code == 400
+
+
+def test_cookbook_use_creates_active_provider():
+    resp = client.post("/cookbook/use", json={"model": "llama3.2:1b"}).json()
+    assert resp["model"] == "llama3.2:1b"
+    assert resp["base_url"].endswith("/v1")
+    assert resp["is_active"] is True
+    # Verify it was actually persisted + active in the providers list
+    active = client.get("/providers/active").json()
+    assert active["active"]["id"] == resp["id"]
+
+
+def test_cookbook_use_is_idempotent():
+    a = client.post("/cookbook/use", json={"model": "qwen2.5:7b"}).json()
+    b = client.post("/cookbook/use", json={"model": "qwen2.5:7b"}).json()
+    assert a["id"] == b["id"]
+
+
+def test_cookbook_use_requires_model():
+    assert client.post("/cookbook/use", json={"model": ""}).status_code == 400
+
+
+def test_cookbook_delete_route(monkeypatch):
+    def _req(method, url, **kwargs):
+        assert method == "DELETE"
+        return _FakeResp(200, {})
+    monkeypatch.setattr(main.httpx, "request", _req)
+    # The ":" in the tag must survive the route — Starlette handles it via
+    # the :path converter we use.
+    resp = client.delete("/cookbook/models/llama3.2:1b")
+    assert resp.status_code == 200
+
+
+def test_cookbook_delete_propagates_ollama_failure(monkeypatch):
+    def _req(method, url, **kwargs):
+        raise ConnectionError("no")
+    monkeypatch.setattr(main.httpx, "request", _req)
+    assert client.delete("/cookbook/models/x:1").status_code == 502
+
+
+# ---------------------------------------------------------------------------
 # Tests — Stats + export
 # ---------------------------------------------------------------------------
 
