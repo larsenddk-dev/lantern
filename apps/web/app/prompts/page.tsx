@@ -72,6 +72,15 @@ export default function PromptsPage() {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [filter, setFilter] = useState("");
+
+  const visiblePrompts = filter.trim()
+    ? prompts.filter((p) =>
+        ((p.title || "") + " " + (p.content || ""))
+          .toLowerCase()
+          .includes(filter.trim().toLowerCase()),
+      )
+    : prompts;
 
   const load = useCallback(async () => {
     try {
@@ -154,6 +163,17 @@ export default function PromptsPage() {
           </div>
         )}
 
+        {!loading && prompts.length > 3 && (
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter prompts…"
+            className="w-full mb-4 px-3 py-2 rounded-md text-sm border outline-none"
+            style={{ borderColor: "var(--border)", background: "var(--muted)", color: "var(--foreground)" }}
+          />
+        )}
+
         {loading ? (
           <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>Loading…</p>
         ) : prompts.length === 0 && !creating ? (
@@ -165,9 +185,13 @@ export default function PromptsPage() {
               copy them anywhere.
             </p>
           </div>
+        ) : visiblePrompts.length === 0 ? (
+          <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+            No prompts match &ldquo;{filter}&rdquo;.
+          </p>
         ) : (
           <ul className="flex flex-col gap-3">
-            {prompts.map((p) =>
+            {visiblePrompts.map((p) =>
               editingId === p.id ? (
                 <li key={p.id} className="p-3 rounded-md border" style={{ borderColor: "var(--border)" }}>
                   <PromptEditor

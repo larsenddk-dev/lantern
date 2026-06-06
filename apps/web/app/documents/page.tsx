@@ -34,8 +34,15 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<DocumentDetail | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [filter, setFilter] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
+
+  const visibleDocs = filter.trim()
+    ? docs.filter((d) =>
+        d.filename.toLowerCase().includes(filter.trim().toLowerCase()),
+      )
+    : docs;
 
   const load = useCallback(async () => {
     try {
@@ -180,6 +187,16 @@ export default function DocumentsPage() {
       <div className="flex flex-1 min-h-0">
         {/* List */}
         <div className="flex-1 overflow-y-auto p-6">
+          {docs.length > 3 && (
+            <input
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter documents…"
+              className="w-full mb-4 px-3 py-2 rounded-md text-sm border outline-none"
+              style={{ borderColor: "var(--border)", background: "var(--muted)", color: "var(--foreground)" }}
+            />
+          )}
           {loading ? (
             <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>Loading…</p>
           ) : docs.length === 0 ? (
@@ -193,9 +210,13 @@ export default function DocumentsPage() {
                 </p>
               </div>
             </div>
+          ) : visibleDocs.length === 0 ? (
+            <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+              No documents match &ldquo;{filter}&rdquo;.
+            </p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {docs.map((doc) => (
+              {visibleDocs.map((doc) => (
                 <li
                   key={doc.id}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-md border transition-colors"
