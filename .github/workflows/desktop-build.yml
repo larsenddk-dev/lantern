@@ -1,0 +1,85 @@
+# Lantern desktop build — cross-platform installers (macOS .dmg, Windows .exe/.msi, Linux .AppImage/.deb)
+#
+# Builds the Tauri app on each OS, with the FastAPI backend bundled as a
+# PyInstaller sidecar (PyInstaller is not cross-platform, so it is built on each
+# runner). On a version tag (vX.Y.Z) the installers are attached to a GitHub
+# Release.
+#
+# STATUS: draft — validate on the first CI run. Code signing / notarization
+# (macOS) and Authenticode (Windows) require certificates in repo secrets and
+# are intentionally NOT wired here yet (see DESKTOP.md / parked work).
+name: Desktop build
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            triple: aarch64-apple-darwin
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+          - os: ubuntu-latest
+            triple: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build deps (Tauri webkit)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build web static export
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_LANTERN_API_URL: http://127.0.0.1:8000
+        run: |
+          npm install
+          npm run build
+
+      - name: Build FastAPI sidecar (PyInstaller, per-OS)
+        working-directory: apps/api
+        shell: bash
+        run: |
+          python -m venv .venv
+          if [ "${{ runner.os }}" = "Windows" ]; then PY=.venv/Scripts/python; else PY=.venv/bin/python; fi
+          "$PY" -m pip install --upgrade pip
+          "$PY" -m pip install -r requirements.txt pyinstaller
+          "$PY" -m PyInstaller lantern-api.spec
+          mkdir -p ../desktop/src-tauri/binaries
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp dist/lantern-api.exe "../desktop/src-tauri/binaries/lantern-api-${{ matrix.triple }}.exe"
+          else
+            cp dist/lantern-api "../desktop/src-tauri/binaries/lantern-api-${{ matrix.triple }}"
+            chmod +x "../desktop/src-tauri/binaries/lantern-api-${{ matrix.triple }}"
+          fi
+
+      - name: Install desktop deps
+        working-directory: apps/desktop
+        run: npm install
+
+      - name: Build Tauri app (+ release on tag)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && format('Lantern {0}', github.ref_name) || '' }}
+          releaseDraft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
