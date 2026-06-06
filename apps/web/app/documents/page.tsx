@@ -52,6 +52,13 @@ export default function DocumentsPage() {
     load();
   }, [load]);
 
+  // Deep-link: open a specific document when arriving via search (?focus=<id>).
+  useEffect(() => {
+    const focus = new URLSearchParams(window.location.search).get("focus");
+    if (focus) openDocument(focus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
     setUploading(true);

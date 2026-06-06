@@ -125,7 +125,9 @@ export function CommandPalette() {
     const hit = hits[i - results.length];
     if (!hit) return;
     setOpen(false);
-    router.push(hit.path);
+    // Deep-link the specific item; pages that understand ?focus open it,
+    // others harmlessly ignore the param.
+    router.push(`${hit.path}?focus=${encodeURIComponent(hit.id)}`);
   }
 
   return (

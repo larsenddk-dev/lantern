@@ -226,6 +226,13 @@ export function ChatShell() {
     }
   }, []);
 
+  // Deep-link: open a specific session when arriving via search (?focus=<id>).
+  // Uses window.location to avoid the static-export useSearchParams/Suspense gotcha.
+  useEffect(() => {
+    const focus = new URLSearchParams(window.location.search).get("focus");
+    if (focus) loadSession(focus);
+  }, [loadSession]);
+
   const handleNewSession = useCallback(async () => {
     setError(null);
     try {
