@@ -2,9 +2,29 @@
 
 Workspace: Lantern
 Created: 2026-06-05T08:05:15Z
-Updated: 2026-06-06T00:10Z
+Updated: 2026-06-06T14:40Z
 
 ## Current State
+
+**Windows desktop installer — SHIPPED & app launches (2026-06-06).**
+brief-lantern-v1-windows-desktop-installer, run transport-20260606120724-773d10b9.
+- Installers built on this Windows host: `bundle/msi/Lantern_0.1.0_x64_en-US.msi`
+  (22.55 MB, WiX) + `bundle/nsis/Lantern_0.1.0_x64-setup.exe` (21.94 MB, NSIS).
+- Built app launches natively: WebView2 window renders, spawns the sidecar,
+  app-spawned `/health` -> 200. pytest 37/37.
+- Fixed a pre-existing launch crash: `plugins.shell.scope`/`sidecar` in
+  `apps/desktop/src-tauri/tauri.conf.json` is invalid for tauri-plugin-shell
+  2.3.5 (Tauri v2 moved sidecar perms to capabilities). Removed them, kept
+  `"open": false`. No capability file needed — sidecar spawns Rust-side in
+  setup(). **This tauri.conf.json edit is NOT yet committed.**
+- Build env (this host): build from a VS Dev Shell (VS 18 / MSVC 14.50) and add
+  `lib\onecore\x64` to LIB — this toolset ships `legacy_stdio_definitions.lib`
+  only under onecore. Git link.exe did NOT shadow MSVC. Running the RAW
+  target/release exe needs the sidecar copied beside it; the installer handles it.
+- Ledger note: dispatched executor (Sonnet, bg) stalled at its turn limit on the
+  long compile (its bg build died on subagent exit); Manager completed the build
+  via a persistent main-session bg task + the approved fix. Run terminal status
+  stays `partial` (honest); brief goal met. Manager verification: **ship**.
 
 **v1 AI features shipped (direct build, autonomous overnight)** — all on GitHub
 `origin/main` (through commit e639c9c). 35/35 pytest green, `next build` clean.

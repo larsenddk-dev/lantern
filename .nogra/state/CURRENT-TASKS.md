@@ -1,7 +1,7 @@
 # Current Tasks
 
 Workspace: Lantern
-Updated: 2026-06-06T00:10Z
+Updated: 2026-06-06T14:40Z
 
 ## Completed
 
@@ -34,15 +34,47 @@ Updated: 2026-06-06T00:10Z
 - [x] Deep Research (c560796): plan → gather (RAG) → synthesized report over
       saved knowledge; POST /research; Research nav + page. 37/37 pytest;
       verified live in browser (4 sub-questions + structured report vs Groq).
+- [x] Windows desktop installer (brief-lantern-v1-windows-desktop-installer,
+      run transport-20260606120724-773d10b9): MSI 22.55 MB + NSIS .exe 21.94 MB
+      built on Windows; app launches natively + spawns sidecar (/health 200);
+      pytest 37/37. Fixed pre-existing launch crash (invalid plugins.shell.scope
+      in tauri.conf.json, rejected by tauri-plugin-shell 2.3.5). Build env: VS
+      Dev Shell + onecore LIB. Run ledger stays `partial` (executor stalled at
+      turn limit → Manager completed build+fix); verification: ship.
+      tauri.conf.json edit NOT yet committed.
+- [x] Markdown rendering in Chat + Research (direct, no brief): shared
+      components/markdown.tsx (react-markdown 10 + remark-gfm 4). Assistant
+      replies + research reports now render GFM (headings, lists, code blocks,
+      tables, links, strikethrough); user messages stay plain. Verified: next
+      build clean (13 routes) + live snapshot + computed styles + no console
+      errors. Deps added to apps/web. Not committed.
+- [x] Chat stop button (direct): Send becomes a Stop button while streaming
+      (AbortController); streaming cursor clears on stop. Build-verified.
+- [x] RAG context toggle (direct): "Context" on/off in the chat header; sends
+      use_context:false to /chat when off (backend ChatRequest.use_context).
+      Verified interactively in preview (toggles + aria-pressed, no errors).
+- [x] Desktop startup splash (direct): components/startup-gate.tsx polls /health
+      and shows a "Starting Lantern…" splash during sidecar cold start; 30s
+      fall-through + 500ms anti-flash. Both paths verified in preview.
+- [x] Embeddings helper in Settings (direct): components/embeddings-settings.tsx
+      — "Embeddings & RAG" section shows /rag/status count + Re-index (/rag/index)
+      with result feedback + provider-capability guidance. Verified in preview
+      (renders, live status "0 items embedded", re-index flow). No console errors.
 
 ## Active
 
-_None — autonomous overnight batch complete. See MORNING-REPORT.md._
+v1.0 polish push (direct, UNCOMMITTED). **Tier A DONE:** markdown · stop button ·
+RAG toggle · startup splash · embeddings helper. Remaining for v1.0: Tier B
+`--onedir` faster sidecar (rebuilds the desktop) + optional CI tag-validation.
+⚠️ LARGE uncommitted set (desktop launch fix + 5 web polish features) — commit
+checkpoint strongly recommended BEFORE the next desktop rebuild.
 
 ## Open user/Manager checks
 
-- Launch the desktop window (`cd apps/desktop && npm run dev`) to confirm native
-  render (note: stop the dev API on :8000 first; sidecar binds 8000).
+- [x] Desktop window launch — VERIFIED (2026-06-06): built app opens natively,
+  spawns sidecar, /health 200; window left open this session for your eyeball.
+  (Running the RAW release exe needs the sidecar copied beside it; installer is fine.)
+- Optional: commit the tauri.conf.json launch fix.
 - RAG indexing needs an embeddings-capable provider; set one + click Re-index
   on the Memory page to use semantic retrieval (pinned memories work without it).
 - **Move the repo off iCloud-synced `~/Desktop`** to avoid another eviction.
