@@ -26,6 +26,9 @@ import type {
   CompareResult,
   AgentResponse,
   AgentStep,
+  ResearchResponse,
+  ResearchFinding,
+  ResearchSource,
 } from "./types";
 
 const BASE_URL =
@@ -316,6 +319,18 @@ export const api = {
       body: JSON.stringify({ message, max_steps: maxSteps }),
     });
   },
+
+  // ---------------------------------------------------------------------------
+  // Deep Research API helper
+  // ---------------------------------------------------------------------------
+
+  research(question: string, maxSubquestions = 4): Promise<ResearchResponse> {
+    return request("/research", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, max_subquestions: maxSubquestions }),
+    });
+  },
 };
 
 export type {
@@ -327,4 +342,5 @@ export type {
   Memory, CreateMemoryPayload, UpdateMemoryPayload,
   CompareTarget, CompareResult,
   AgentResponse, AgentStep,
+  ResearchResponse, ResearchFinding, ResearchSource,
 };

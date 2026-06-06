@@ -168,3 +168,25 @@ export interface AgentResponse {
   reply: string;
   steps: AgentStep[];
 }
+
+// ---------------------------------------------------------------------------
+// Deep Research types
+// ---------------------------------------------------------------------------
+
+export interface ResearchSource {
+  source_type: string;
+  content: string;
+  score: number;
+}
+
+export interface ResearchFinding {
+  subquestion: string;
+  sources: ResearchSource[];
+}
+
+export interface ResearchResponse {
+  question: string;
+  subquestions: string[];
+  findings: ResearchFinding[];
+  report: string;
+}

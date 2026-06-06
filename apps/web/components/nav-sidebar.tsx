@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Bot,
   Columns2,
+  Telescope,
   FileText,
   StickyNote,
   CheckSquare,
@@ -18,6 +19,7 @@ import {
 const navItems = [
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/agent", label: "Agent", icon: Bot },
+  { href: "/research", label: "Research", icon: Telescope },
   { href: "/compare", label: "Compare", icon: Columns2 },
   { href: "/documents", label: "Documents", icon: FileText },
   { href: "/notes", label: "Notes", icon: StickyNote },

@@ -846,3 +846,33 @@ def test_safe_eval_rejects_non_arithmetic():
         main._safe_eval("__import__('os').system('echo hi')")
     with _pytest.raises(Exception):
         main._safe_eval("open('/etc/passwd')")
+
+
+# ---------------------------------------------------------------------------
+# Tests — Deep Research (plan → gather → synthesize), offline stub
+# ---------------------------------------------------------------------------
+
+
+def test_research_plans_gathers_and_synthesizes(monkeypatch):
+    calls = {"n": 0}
+
+    def _stub_complete(messages, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return '["What is X?", "How does X work?"]'  # plan
+        return "# Report\n\nA structured report about X."  # synthesis
+
+    monkeypatch.setattr(main, "complete_chat_once", _stub_complete)
+    monkeypatch.setattr(main, "embed_texts", _stub_embed)
+
+    resp = client.post("/research", json={"question": "Tell me about X"}).json()
+    assert resp["subquestions"] == ["What is X?", "How does X work?"]
+    assert "structured report about X" in resp["report"]
+    assert len(resp["findings"]) == 2
+    assert calls["n"] == 2  # exactly one plan + one synthesis call
+
+
+def test_parse_subquestions_fallback_for_non_json():
+    subs = main._parse_subquestions("1. First sub question here\n2. Second sub question here", 4)
+    assert len(subs) == 2
+    assert subs[0].startswith("First sub question")

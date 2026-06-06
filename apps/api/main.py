@@ -973,6 +973,83 @@ def agent_run(message: str, *, max_steps: int = 5) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Deep Research — plan → gather (RAG over saved knowledge) → synthesize report
+# ---------------------------------------------------------------------------
+
+def _parse_subquestions(text: str, limit: int) -> list[str]:
+    """Tolerantly extract sub-questions from a model reply (JSON array preferred,
+    bullet/line list as fallback)."""
+    try:
+        start = text.index("[")
+        end = text.rindex("]") + 1
+        arr = json.loads(text[start:end])
+        subs = [str(x).strip() for x in arr if str(x).strip()]
+        if subs:
+            return subs[:limit]
+    except (ValueError, json.JSONDecodeError):
+        pass
+    subs = []
+    for line in text.splitlines():
+        cleaned = line.strip().lstrip("-*0123456789.) ").strip()
+        if len(cleaned) > 8:
+            subs.append(cleaned)
+    return subs[:limit]
+
+
+def research_run(question: str, *, max_subquestions: int = 4) -> dict:
+    """Multi-step research over the user's saved knowledge (documents + memories)
+    plus the model's own knowledge. Returns sub-questions, per-question sources,
+    and a synthesized report."""
+    base_url, api_key, model = db_resolve_provider()
+
+    # 1) Plan — break the question into sub-questions.
+    plan_prompt = [
+        {"role": "system", "content": (
+            "You are a research planner. Break the user's question into a few "
+            "concise sub-questions. Reply ONLY with a JSON array of strings."
+        )},
+        {"role": "user", "content": f"Question: {question}\nMax sub-questions: {max_subquestions}"},
+    ]
+    plan_raw = complete_chat_once(plan_prompt, base_url=base_url, api_key=api_key, model=model)
+    subquestions = _parse_subquestions(plan_raw, max_subquestions) or [question]
+
+    # 2) Gather — retrieve relevant saved knowledge for each sub-question.
+    findings = []
+    context_blocks = []
+    for sq in subquestions:
+        try:
+            hits = rag_search(sq, k=3)
+        except Exception:
+            hits = []
+        sources = [
+            {"source_type": h["source_type"], "content": h["content"][:400],
+             "score": round(h["score"], 3)}
+            for h in hits if h["score"] > 0.1
+        ]
+        findings.append({"subquestion": sq, "sources": sources})
+        if sources:
+            context_blocks.append(
+                f"Sub-question: {sq}\n" + "\n".join(f"- {s['content']}" for s in sources)
+            )
+
+    # 3) Synthesize — write the report.
+    context = "\n\n".join(context_blocks) if context_blocks else (
+        "(No saved knowledge matched — answer from general knowledge and say so.)"
+    )
+    synth_prompt = [
+        {"role": "system", "content": (
+            "You are a research assistant. Write a clear, well-structured report "
+            "that answers the question. Use the provided context from the user's "
+            "saved knowledge where relevant, and note where you rely on general "
+            "knowledge instead."
+        )},
+        {"role": "user", "content": f"Question: {question}\n\nContext:\n{context}\n\nWrite the report."},
+    ]
+    report = complete_chat_once(synth_prompt, base_url=base_url, api_key=api_key, model=model)
+    return {"question": question, "subquestions": subquestions, "findings": findings, "report": report}
+
+
+# ---------------------------------------------------------------------------
 # Lifespan — init DB once on startup
 # ---------------------------------------------------------------------------
 
@@ -1030,6 +1107,11 @@ class CompareRequest(BaseModel):
 class AgentRequest(BaseModel):
     message: str
     max_steps: int = 5
+
+
+class ResearchRequest(BaseModel):
+    question: str
+    max_subquestions: int = 4
 
 
 class CreateProviderRequest(BaseModel):
@@ -1403,6 +1485,17 @@ def agent(body: AgentRequest):
     """Run the agent loop over the message and return the reply + tool steps."""
     steps = max(1, min(body.max_steps, 8))
     return agent_run(body.message, max_steps=steps)
+
+
+# ---------------------------------------------------------------------------
+# Deep Research route
+# ---------------------------------------------------------------------------
+
+@app.post("/research")
+def research(body: ResearchRequest):
+    """Plan sub-questions, gather from saved knowledge (RAG), synthesize a report."""
+    n = max(1, min(body.max_subquestions, 6))
+    return research_run(body.question, max_subquestions=n)
 
 
 # ---------------------------------------------------------------------------
