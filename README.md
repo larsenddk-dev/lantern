@@ -6,9 +6,12 @@ Lantern is your own ChatGPT/Claude-style workspace, running on **your** hardware
 with **your** data. Inspired by [PewDiePie's Odysseus](https://github.com/pewdiepie-archdaemon/odysseus),
 but broader, with more features and a much better UI. New project, built from scratch — not a fork.
 
-> **Status:** v0.1 Phase 2b complete (Chat, Notes, Tasks, multi-provider Settings).
-> Heading toward **v1** as an installable **desktop app** — the Tauri + Python-sidecar
-> packaging is proven (Phase 3a spike; see [`apps/desktop/README.md`](apps/desktop/README.md)).
+> **Status:** v0.1 shell complete **plus** v1 AI features — Memory, **RAG**
+> (retrieval wired into chat), **Agent** (tool-calling), and **Compare**
+> (multi-model). Installable **desktop app** via Tauri + Python sidecar (proven;
+> see [`apps/desktop/README.md`](apps/desktop/README.md)) with a cross-platform
+> build CI (`.github/workflows/desktop-build.yml`). Parked (need your input):
+> Email/Calendar (credentials), Cookbook/image editor (heavy), code signing.
 
 ## Tech stack
 - **Frontend:** React / Next.js · Tailwind CSS · shadcn/ui
@@ -21,20 +24,25 @@ Many feature areas visible from day one. **Chat is fully functional**
 (multi-provider, streaming, sessions, runtime provider switching); the other areas
 ship as real-but-light modules / stubs that we deepen over later milestones:
 
-| Area | v0.1 |
+| Area | Status |
 |---|---|
-| Chat | ✅ working (streaming, sessions, provider switching) |
+| Chat | ✅ working (streaming, sessions, provider switching, RAG context) |
+| Agent + tools | ✅ working (knowledge search, notes, tasks, calculator) |
+| Compare | ✅ working (one prompt → multiple models, side by side) |
 | Settings — AI Providers | ✅ working (add/edit/delete/activate; key masking) |
-| Notes | ✅ working (create, list, edit, delete; persisted in SQLite) |
-| Tasks | ✅ working (create, toggle done/undone, delete; persisted in SQLite) |
-| Documents | 🟡 stub (Phase 2c) |
-| Memory | 🟡 stub (Phase 3) |
-| Agent + tools | ⬜ later |
+| Notes | ✅ working (CRUD; persisted in SQLite) |
+| Tasks | ✅ working (create, toggle done/undone, delete; SQLite) |
+| Documents | ✅ working (upload + text extraction .txt/.md/.pdf/.docx) |
+| Memory + RAG | ✅ working (remembered facts, embeddings, retrieval into chat) |
+| Desktop app | ✅ Tauri + Python sidecar proven; cross-platform build CI |
 
-## Later milestones
-Agent + tools (web/files/shell/MCP) · Memory/RAG · Deep Research · Compare ·
-Email (IMAP/SMTP + AI triage) · Calendar (CalDAV) · Cookbook (hardware-aware
-model serving) · image editor · PWA.
+## Later milestones (parked)
+- **Email** (IMAP/SMTP + AI triage) — needs your account credentials.
+- **Calendar** (CalDAV) — needs your account credentials.
+- **Deep Research** — multi-step web research.
+- **Cookbook** (hardware-aware model serving) and **image editor** — heavier.
+- **Desktop polish** — installers/signing/notarization, auto-update, tray,
+  faster sidecar start (`--onedir`); Windows `.exe` builds via the CI matrix.
 
 ## Local development
 

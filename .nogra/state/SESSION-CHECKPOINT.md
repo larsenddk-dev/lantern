@@ -2,13 +2,37 @@
 
 Workspace: Lantern
 Created: 2026-06-05T08:05:15Z
-Updated: 2026-06-05T22:50Z
+Updated: 2026-06-06T00:10Z
 
 ## Current State
 
-**Documents module complete — Phase 2c** (built DIRECTLY, without Nogra, at the
-user's request — no brief/dispatch/verify run for this one). Last v0.1 feature
-shipped; all on GitHub (commit e04a62a + later chores). Verified by Manager:
+**v1 AI features shipped (direct build, autonomous overnight)** — all on GitHub
+`origin/main` (through commit e639c9c). 35/35 pytest green, `next build` clean.
+- **Memory** (commit b63ce90): remembered facts CRUD + pin; pinned injected into chat.
+- **RAG foundation** (939b4bc): embeddings + cosine retrieval over memories &
+  documents; build_chat_context auto-injects into /chat (ChatRequest.use_context);
+  degrades gracefully w/o embedding provider. Routes /rag/status|index|search.
+  embed_texts() OpenAI-compatible /embeddings, LANTERN_EMBED_MODEL; stub in tests.
+- **Compare** (e383e22): complete_chat_once(); POST /compare → N models side by
+  side, per-target error capture. UI: Compare nav + page.
+- **Agent + tools** (5e10861): chat_with_tools() tool-calling loop; tools =
+  search_knowledge (RAG), list_tasks, list_notes, calculator (AST-safe). POST
+  /agent → {reply, steps}. UI: Agent nav + page (shows tool calls). Live 200 vs Groq.
+- **Desktop build CI + PWA manifest** (e639c9c): .github/workflows/desktop-build.yml
+  (mac/win/linux matrix → .dmg/.exe+.msi/.AppImage via tauri-action + PyInstaller
+  sidecar; DRAFT, signing not wired). apps/web/app/manifest.ts (force-static).
+
+Nav now: Chat · Agent · Compare · Documents · Notes · Tasks · Memory · Settings.
+
+**Environment incident:** mid-session `~/Desktop/minai` was iCloud-evicted
+(dataless) — file contents unreadable, all git/build/edits failed with EPERM.
+Recovered later. Recommend moving the repo off iCloud-synced `~/Desktop`.
+
+**Parked (need user/heavy):** Email (IMAP/SMTP) + Calendar (CalDAV) — credentials;
+Cookbook (model serving) + image editor — heavy; code signing — certificates.
+
+### Prior: Documents module — Phase 2c (commit e04a62a)
+Built directly. Verified by Manager:
 - apps/api: `documents` SQLite table + db_* helpers; endpoints POST `/documents`
   (multipart upload), GET `/documents`, GET `/documents/{id}` (+extracted text),
   DELETE `/documents/{id}` (row + stored file).

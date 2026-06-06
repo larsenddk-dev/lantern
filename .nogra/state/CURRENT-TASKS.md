@@ -1,7 +1,7 @@
 # Current Tasks
 
 Workspace: Lantern
-Updated: 2026-06-05T22:50Z
+Updated: 2026-06-06T00:10Z
 
 ## Completed
 
@@ -23,23 +23,32 @@ Updated: 2026-06-05T22:50Z
       under gitignored data/uploads/; 3 new deps (python-multipart, pypdf,
       python-docx). 24/24 pytest + `next build` green; live + browser verified.
 - [x] Branding — pixel-lantern logo in sidebar + favicon (app/icon.png).
+- [x] Memory module (commit b63ce90): CRUD + pin; 27/27 pytest.
+- [x] RAG foundation (939b4bc): embeddings + cosine retrieval + chat injection;
+      /rag/status|index|search; 30/30 pytest.
+- [x] Compare (e383e22): multi-model side by side; 32/32 pytest.
+- [x] Agent + tools (5e10861): tool-calling loop (knowledge/notes/tasks/calc);
+      35/35 pytest; live 200 vs Groq.
+- [x] Desktop build CI + PWA manifest (e639c9c): cross-platform tauri-action
+      matrix (incl. Windows .exe) + app/manifest.ts. CI is a draft.
 
 ## Active
 
-_None — awaiting next step (Memory module)._
+_None — autonomous overnight batch complete. See MORNING-REPORT.md._
 
-## Open user/Manager check
+## Open user/Manager checks
 
-- Launch the desktop window (`cd apps/desktop && npm run dev`) to visually
-  confirm Lantern renders natively + chat/notes/tasks/documents work against
-  the sidecar.
+- Launch the desktop window (`cd apps/desktop && npm run dev`) to confirm native
+  render (note: stop the dev API on :8000 first; sidecar binds 8000).
+- RAG indexing needs an embeddings-capable provider; set one + click Re-index
+  on the Memory page to use semantic retrieval (pinned memories work without it).
+- **Move the repo off iCloud-synced `~/Desktop`** to avoid another eviction.
+- Run the desktop build CI on a tag to produce real installers; validate it.
 
-## Parked (next phases)
+## Parked (need user / heavy)
 
-- **Memory** (light module) — last v0.1 module. Then Memory/RAG: embed notes,
-  surface relevant context in chat.
-- Later: Agent + tools, Deep Research, Compare, Email, Calendar, Cookbook,
-  image editor, PWA.
-- Desktop polish (later): installers, code signing/notarization, auto-update,
-  tray/menu, faster sidecar start (--onedir), Windows/Linux builds (Windows
-  .exe = PyInstaller-on-Windows sidecar + tauri build / CI matrix).
+- **Email** (IMAP/SMTP + AI triage), **Calendar** (CalDAV) — your credentials.
+- **Deep Research** — multi-step web research.
+- **Cookbook** (model serving), **image editor** — heavy.
+- **Desktop polish:** installers signing/notarization, auto-update, tray/menu,
+  faster sidecar start (--onedir).
