@@ -55,7 +55,7 @@ export default function AgentPage() {
         <Bot size={18} aria-hidden="true" />
         <h1 className="text-sm font-semibold">Agent</h1>
         <span className="text-xs ml-2" style={{ color: "var(--muted-foreground)" }}>
-          Uses tools: knowledge search, notes, tasks, calculator
+          Uses tools: knowledge search, web search, notes, tasks, calculator
         </span>
       </header>
 

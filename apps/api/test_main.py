@@ -929,3 +929,62 @@ def test_search_across_modules():
 
 def test_search_empty_query_returns_empty():
     assert client.get("/search", params={"q": "   "}).json()["results"] == []
+
+
+# ---------------------------------------------------------------------------
+# Tests — Web search (env-keyed; not configured in tests)
+# ---------------------------------------------------------------------------
+
+
+def test_web_search_not_configured_by_default():
+    # No LANTERN_TAVILY_API_KEY in the test env → graceful, never raises.
+    r = main.web_search("anything")
+    assert r["configured"] is False
+    assert r["results"] == []
+    assert "note" in r
+
+
+def test_agent_web_search_tool_reports_unconfigured(monkeypatch):
+    calls = {"n": 0}
+
+    def _stub_tools(messages, tools, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": "c1", "type": "function",
+                    "function": {"name": "web_search", "arguments": '{"query": "latest news"}'},
+                }],
+            }
+        return {"role": "assistant", "content": "I can't search the web yet."}
+
+    monkeypatch.setattr(main, "chat_with_tools", _stub_tools)
+    resp = client.post("/agent", json={"message": "what's the news?"}).json()
+    assert any(s["tool"] == "web_search" for s in resp["steps"])
+    assert "not configured" in resp["steps"][0]["result"].lower()
+
+
+def test_agent_web_search_with_stubbed_results(monkeypatch):
+    def _stub_web(query, max_results=5):
+        return {"configured": True, "results": [
+            {"title": "Result A", "url": "https://a.example", "content": "alpha content"},
+        ]}
+
+    calls = {"n": 0}
+
+    def _stub_tools(messages, tools, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {
+                "role": "assistant", "content": None,
+                "tool_calls": [{"id": "c1", "type": "function",
+                                "function": {"name": "web_search", "arguments": '{"query": "alpha"}'}}],
+            }
+        return {"role": "assistant", "content": "Found Result A."}
+
+    monkeypatch.setattr(main, "web_search", _stub_web)
+    monkeypatch.setattr(main, "chat_with_tools", _stub_tools)
+    resp = client.post("/agent", json={"message": "search alpha"}).json()
+    assert "Result A" in resp["steps"][0]["result"]

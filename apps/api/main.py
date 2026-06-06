@@ -28,6 +28,9 @@ LANTERN_OPENAI_API_KEY = os.environ.get("LANTERN_OPENAI_API_KEY", "")
 LANTERN_MODEL = os.environ.get("LANTERN_MODEL", "openai/gpt-4o-mini")
 LANTERN_EMBED_MODEL = os.environ.get("LANTERN_EMBED_MODEL", "text-embedding-3-small")
 LANTERN_WEB_ORIGIN = os.environ.get("LANTERN_WEB_ORIGIN", "http://localhost:3000")
+# Optional web search (Tavily). Build-time integration; activate by setting the
+# key in .env — same pattern as the AI provider keys (the app never stores it).
+LANTERN_TAVILY_API_KEY = os.environ.get("LANTERN_TAVILY_API_KEY", "")
 
 # ---------------------------------------------------------------------------
 # DB path — always stored in a gitignored data/ dir relative to this file,
@@ -500,6 +503,30 @@ def chat_with_tools(messages: list[dict], tools: list[dict], *,
     return resp.json()["choices"][0]["message"]
 
 
+def web_search(query: str, max_results: int = 5) -> dict:
+    """Search the public web via Tavily. Requires LANTERN_TAVILY_API_KEY.
+    Never raises: returns {configured, results, note?/error?}. Stubbed in tests."""
+    if not LANTERN_TAVILY_API_KEY:
+        return {"configured": False, "results": [],
+                "note": "Web search not configured. Set LANTERN_TAVILY_API_KEY in .env."}
+    try:
+        resp = httpx.post(
+            "https://api.tavily.com/search",
+            json={"api_key": LANTERN_TAVILY_API_KEY, "query": query,
+                  "max_results": max_results, "search_depth": "basic"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        results = [
+            {"title": r.get("title", ""), "url": r.get("url", ""),
+             "content": (r.get("content") or "")[:500]}
+            for r in resp.json().get("results", [])
+        ]
+        return {"configured": True, "results": results}
+    except Exception as e:
+        return {"configured": True, "results": [], "error": str(e)[:200]}
+
+
 async def stream_chat_completion(
     messages: list[dict],
     *,
@@ -874,8 +901,9 @@ def build_chat_context(query: str, *, k: int = 5, min_score: float = 0.15) -> li
 
 AGENT_SYSTEM = (
     "You are Lantern's agent. You can call tools to look up the user's saved "
-    "knowledge (memories and documents), list their notes and tasks, and do "
-    "arithmetic. Use tools when they help; then answer concisely."
+    "knowledge (memories and documents), search the public web, list their "
+    "notes and tasks, and do arithmetic. Use tools when they help; then answer "
+    "concisely."
 )
 
 AGENT_TOOLS = [
@@ -887,6 +915,18 @@ AGENT_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {"query": {"type": "string", "description": "What to look for"}},
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the public web for current/external information.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
                 "required": ["query"],
             },
         },
@@ -951,6 +991,16 @@ def _run_agent_tool(name: str, args: dict) -> str:
                 return json.dumps({"pinned_memories": pinned, "results": []})
             return json.dumps([
                 {"content": h["content"][:500], "score": round(h["score"], 3)} for h in hits
+            ])
+        if name == "web_search":
+            r = web_search(args.get("query", ""), max_results=5)
+            if not r.get("configured"):
+                return "Web search is not configured (no API key). Tell the user to set LANTERN_TAVILY_API_KEY."
+            if r.get("error"):
+                return f"web search error: {r['error']}"
+            return json.dumps([
+                {"title": x["title"], "url": x["url"], "snippet": x["content"][:200]}
+                for x in r["results"]
             ])
         if name == "list_tasks":
             return json.dumps([
