@@ -6,12 +6,33 @@ Lantern is your own ChatGPT/Claude-style workspace, running on **your** hardware
 with **your** data. Inspired by [PewDiePie's Odysseus](https://github.com/pewdiepie-archdaemon/odysseus),
 but broader, with more features and a much better UI. New project, built from scratch — not a fork.
 
-> **Status:** v0.1 shell complete **plus** v1 AI features — Memory, **RAG**
-> (retrieval wired into chat), **Agent** (tool-calling), and **Compare**
-> (multi-model). Installable **desktop app** via Tauri + Python sidecar (proven;
-> see [`apps/desktop/README.md`](apps/desktop/README.md)) with a cross-platform
-> build CI (`.github/workflows/desktop-build.yml`). Parked (need your input):
-> Email/Calendar (credentials), Cookbook/image editor (heavy), code signing.
+> **Status:** working v1 **desktop app** — all the feature areas below are live,
+> and it installs + launches on Windows/macOS/Linux. Built from scratch.
+
+## ⬇️ Download & install (just want to use it?)
+
+Grab the installer for your OS from the
+[**Releases**](https://github.com/larsenddk-dev/lantern/releases) page:
+
+| OS | File |
+|---|---|
+| **Windows** | `Lantern_*_x64-setup.exe` (installer) — or the `.msi` |
+| **macOS** | `Lantern_*_aarch64.dmg` |
+| **Linux** | `Lantern_*_amd64.AppImage` |
+
+> Lantern is free, open, and **unsigned**, so the OS will warn the first time:
+> on **Windows** SmartScreen says *"Windows protected your PC"* → click
+> **More info → Run anyway**; on **macOS**, right-click the app → **Open**.
+
+1. Launch **Lantern**. The first start takes a few seconds while the bundled
+   local engine warms up (you'll see a "Starting Lantern…" splash).
+2. Open **Settings → Add provider**, pick a preset (e.g. **Groq**, free tier),
+   paste your own API key, and click **Use**.
+3. Start chatting. Everything — your key, conversations, notes, documents —
+   stays **local on your machine**.
+
+_Bring your own AI key. Not yet done: signed installers, live web search,
+Email/Calendar (need your credentials)._
 
 ## Tech stack
 - **Frontend:** React / Next.js · Tailwind CSS · shadcn/ui
@@ -26,16 +47,17 @@ ship as real-but-light modules / stubs that we deepen over later milestones:
 
 | Area | Status |
 |---|---|
-| Chat | ✅ working (streaming, sessions, provider switching, RAG context) |
+| Chat | ✅ streaming · markdown + syntax highlighting · stop · copy · export `.md` · rename/delete chats · RAG context toggle |
 | Agent + tools | ✅ working (knowledge search, notes, tasks, calculator) |
-| Research | ✅ working (plan → gather via RAG → synthesized report) |
+| Research | ✅ working (plan → gather via RAG → synthesized report; export `.md`) |
 | Compare | ✅ working (one prompt → multiple models, side by side) |
-| Settings — AI Providers | ✅ working (add/edit/delete/activate; key masking) |
+| Settings — AI Providers | ✅ working (add/edit/delete/activate; key masking) · Embeddings & RAG helper |
 | Notes | ✅ working (CRUD; persisted in SQLite) |
 | Tasks | ✅ working (create, toggle done/undone, delete; SQLite) |
 | Documents | ✅ working (upload + text extraction .txt/.md/.pdf/.docx) |
 | Memory + RAG | ✅ working (remembered facts, embeddings, retrieval into chat) |
-| Desktop app | ✅ Tauri + Python sidecar proven; cross-platform build CI |
+| Command palette | ✅ ⌘K / Ctrl+K fuzzy search + jump · ⌘/Ctrl + 1-9 page shortcuts |
+| Desktop app | ✅ installs + **launches** — Win `.exe`/`.msi`, mac `.dmg`, Linux `.AppImage` via build CI |
 
 ## Later milestones (parked)
 - **Email** (IMAP/SMTP + AI triage) — needs your account credentials.
