@@ -3,10 +3,10 @@
 Arbejdsdokument til de kommende opgaver. Åbn på Windows efter `git pull`.
 Afkryds (`[x]`) efterhånden. Rytme: **byg → test → commit + push** pr. opgave.
 
-> **Status lige nu:** 9 funktionelle områder live (Chat · Agent · Research ·
-> Compare · Documents · Notes · Tasks · Memory · Settings). 37/37 backend-tests
-> grønne, web build ren, desktop-pakning (Tauri + Python-sidecar) bevist.
-> Alt på `origin/main`.
+> **Status (2026-06-06):** 9 funktionelle områder + command palette (⌘K),
+> dark/light/system-tema og global søgning. **43/43 backend-tests** grønne, web
+> build ren. **Windows-installer (.exe + .msi) bygget og starter.** Alt på
+> `origin/main` (tag `v0.1.0`).
 
 ---
 
@@ -22,15 +22,21 @@ Afkryds (`[x]`) efterhånden. Rytme: **byg → test → commit + push** pr. opga
 ---
 
 ## 1. Polér det eksisterende (ingen credentials)
-- [ ] **Markdown-rendering** i chat + research-rapporter (kodeblokke, lister, overskrifter)
-- [ ] **Stop-knap** i chat (afbryd en streaming-besked)
-- [ ] **RAG-til/fra-toggle** i chat-headeren (så man kan slå kontekst fra pr. samtale)
-- [ ] **Embeddings-provider-helper** i Settings (vælg/test en `/embeddings`-capable provider til RAG)
+- [x] **Markdown-rendering** i chat + research-rapporter (+ syntax highlighting)
+- [x] **Stop-knap** i chat (afbryd en streaming-besked)
+- [x] **RAG-til/fra-toggle** i chat-headeren
+- [x] **Embeddings-provider-helper** i Settings
+- [x] **Dark / light / system-tema** (toggle i sidebar-footeren, no-flash)
+- [x] **Drag-and-drop** filupload i Documents
+- [x] **Global søgning** (⌘K — noter/opgaver/dokumenter/memory/chats)
+- [x] **Command palette** (⌘K) + ⌘/Ctrl+1-9 genveje + copy-knapper + rename/delete chats + markdown-eksport
 - [ ] Fjern **Turbopack lockfile-advarsel** (sæt `turbopack.root` i `next.config.ts`, eller fjern den løse `~/package-lock.json`)
-- [ ] Små UX-ting: tom-tilstande, fejl-toasts, tastatur-genveje
+- [ ] Resterende små UX-ting: fejl-toasts, flere tom-tilstande
 
 ## 2. Desktop-polish + Windows `.exe`
-- [ ] **Byg Windows-`.exe` lokalt** (på Windows-maskinen):
+- [x] **Windows-`.exe` + `.msi` bygget** på Windows — app starter + spawner sidecar (verificeret). Launch-crash (ugyldig `plugins.shell.scope`) rettet.
+- [x] **Splash/"starter…"-skærm** mens sidecar booter
+- [ ] **Byg Windows-`.exe` lokalt** (reproducer / fremtidige builds):
   - [ ] `cd apps\api` → `.venv\Scripts\pip install pyinstaller` → `.venv\Scripts\pyinstaller lantern-api.spec`
   - [ ] Kopiér `dist\lantern-api.exe` → `apps\desktop\src-tauri\binaries\lantern-api-x86_64-pc-windows-msvc.exe`
   - [ ] `cd apps\web` → `set NEXT_PUBLIC_LANTERN_API_URL=http://127.0.0.1:8000 && npm run build`
@@ -38,7 +44,6 @@ Afkryds (`[x]`) efterhånden. Rytme: **byg → test → commit + push** pr. opga
   - [ ] Krav: Rust (MSVC) + Visual Studio C++ Build Tools + WebView2
 - [ ] **Validér build-CI'en** (`.github/workflows/desktop-build.yml`) ved at pushe et tag: `git tag v0.1.0 && git push --tags` → bygger mac/win/linux + draft-release
 - [ ] **Hurtigere sidecar-start** (skift PyInstaller `--onefile` → `--onedir`; nu ~15-18s cold start)
-- [ ] **Splash/"starter…"-skærm** mens sidecar booter
 - [ ] **Code signing / notarization** (kræver certifikat — se nedenfor)
 
 ## 3. Flere AI-funktioner (kan bygges uden credentials)
