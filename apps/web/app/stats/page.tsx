@@ -8,8 +8,10 @@ import {
 import { api } from "@/lib/api";
 import type { Stats } from "@/lib/types";
 
+// 127.0.0.1 (not "localhost") to match the IPv4-only uvicorn sidecar — see
+// lib/api.ts for why "localhost" fails in the packaged Windows webview.
 const BASE_URL =
-  process.env.NEXT_PUBLIC_LANTERN_API_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_LANTERN_API_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
 
 interface CardProps {
   icon: React.ComponentType<{ size?: number }>;

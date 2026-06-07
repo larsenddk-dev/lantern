@@ -1,6 +1,6 @@
 /**
  * Lantern API client — thin fetch wrapper for the FastAPI backend.
- * Base URL is read from NEXT_PUBLIC_LANTERN_API_URL (defaults to localhost:8000).
+ * Base URL is read from NEXT_PUBLIC_LANTERN_API_URL (defaults to 127.0.0.1:8000).
  */
 
 import type {
@@ -48,9 +48,13 @@ import type {
 } from "./types";
 import { toast } from "./toast";
 
+// Use 127.0.0.1 (not "localhost") so the packaged desktop webview hits IPv4
+// directly. On Windows, "localhost" resolves to ::1 first, but the uvicorn
+// sidecar binds IPv4-only 127.0.0.1 — so "localhost" fetches fail ("Failed to
+// fetch" / "Can't reach the Lantern backend") in the WebView2 app.
 const BASE_URL =
   process.env.NEXT_PUBLIC_LANTERN_API_URL?.replace(/\/$/, "") ??
-  "http://localhost:8000";
+  "http://127.0.0.1:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
