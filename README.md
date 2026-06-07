@@ -235,8 +235,8 @@ installers for macOS, Windows, and Linux. Push a tag matching `v*` and a
 draft GitHub Release is created with all three installers attached.
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1
+git push origin v1
 ```
 
 ## License

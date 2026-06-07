@@ -1,6 +1,6 @@
 [package]
 name = "lantern-desktop"
-version = "1.0.1"
+version = "1.0.0"
 description = "Lantern desktop app — Tauri shell with Python sidecar"
 authors = []
 edition = "2021"
