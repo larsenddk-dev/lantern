@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw, Pause, Play, ListChecks, X, PanelRight } from "lucide-react";
+import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw, Pause, Play, ListChecks, X, PanelRight, KeyRound, ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
@@ -343,6 +344,10 @@ export function ChatShell() {
   const [error, setError] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false);
   const [activeProvider, setActiveProvider] = useState<Provider | null>(null);
+  // null = unknown/loading, true/false once we've checked. Drives the empty
+  // state: with no provider, "Start a conversation" would lie — the first
+  // message would just error — so we guide the user to set one up instead.
+  const [hasProvider, setHasProvider] = useState<boolean | null>(null);
   const [useContext, setUseContext] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [generatingTasks, setGeneratingTasks] = useState(false);
@@ -372,6 +377,15 @@ export function ChatShell() {
       .catch(() => {
         /* backend may not be running yet — silent fail */
       });
+  }, []);
+
+  // Check whether any provider is configured, so the empty state can guide a
+  // brand-new user to set one up instead of inviting a message that'll error.
+  useEffect(() => {
+    api
+      .listProviders()
+      .then((list) => setHasProvider(list.length > 0))
+      .catch(() => setHasProvider(null));
   }, []);
 
   const loadSession = useCallback(async (id: string) => {
@@ -950,6 +964,28 @@ export function ChatShell() {
                 className="animate-spin"
                 style={{ color: "var(--muted-foreground)" }}
               />
+            </div>
+          ) : messages.length === 0 && hasProvider === false ? (
+            <div
+              className="flex flex-col items-center justify-center h-full gap-3 text-center"
+              style={{ color: "var(--muted-foreground)" }}
+            >
+              <KeyRound size={40} aria-hidden="true" />
+              <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>
+                Add a provider to get started
+              </p>
+              <p className="text-xs max-w-xs">
+                Lantern needs one AI provider before it can chat. Add an API key —
+                or run a model locally — and you&rsquo;re live.
+              </p>
+              <Link
+                href="/welcome"
+                className="mt-1 inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium transition-opacity hover:opacity-80"
+                style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+              >
+                Set up a provider
+                <ArrowRight size={13} aria-hidden="true" />
+              </Link>
             </div>
           ) : messages.length === 0 ? (
             <div
