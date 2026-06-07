@@ -1,13 +1,18 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw, Pause, Play, ListChecks, X } from "lucide-react";
+import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw, Pause, Play, ListChecks, X, PanelRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import type { Session, Message, Provider } from "@/lib/types";
 import { ProviderSwitcher } from "@/components/provider-switcher";
 import { Markdown } from "@/components/markdown";
+import { CanvasPanel } from "@/components/canvas-panel";
+import type { Artifact } from "@/lib/artifacts";
+import {
+  artifactFromMessage, hasArtifact, extractArtifactBlock, languageLabel,
+} from "@/lib/artifacts";
 import { chatToMarkdown, downloadText, downloadPdf, slugify } from "@/lib/export";
 
 // ---------------------------------------------------------------------------
@@ -47,12 +52,14 @@ function MessageBubble({
   onRetry,
   onEdit,
   onDelete,
+  onOpenCanvas,
 }: {
   msg: StreamingMessage;
   onToggleStar?: (id: string, starred: boolean) => void;
   onRetry?: (id: string) => void;
   onEdit?: (id: string, content: string) => Promise<void>;
   onDelete?: (id: string) => void;
+  onOpenCanvas?: (id: string, content: string) => void;
 }) {
   const isUser = msg.role === "user";
   const [copied, setCopied] = useState(false);
@@ -74,6 +81,8 @@ function MessageBubble({
   const canRetry = !isUser && persisted && !msg.streaming && onRetry;
   const canEdit = persisted && !msg.streaming && onEdit;
   const canDelete = persisted && !msg.streaming && onDelete;
+  // Assistant replies carrying a substantial code/document block can open in Canvas.
+  const canCanvas = !isUser && !msg.streaming && !!msg.content.trim() && !!onOpenCanvas && hasArtifact(msg.content);
 
   async function commitEdit() {
     const next = draft.trim();
@@ -162,6 +171,17 @@ function MessageBubble({
             {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
             {copied ? "Copied" : "Copy"}
           </button>
+          {canCanvas && (
+            <button
+              onClick={() => onOpenCanvas(msg.id, msg.content)}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px]"
+              style={{ color: "var(--primary)" }}
+              title="Open in Canvas — edit, preview and iterate"
+            >
+              <PanelRight size={11} aria-hidden="true" />
+              Canvas
+            </button>
+          )}
           {canEdit && (
             <button
               onClick={() => { setDraft(msg.content); setEditing(true); }}
@@ -326,6 +346,10 @@ export function ChatShell() {
   const [useContext, setUseContext] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [generatingTasks, setGeneratingTasks] = useState(false);
+  // Canvas / Artifacts — the artifact currently open in the side panel, and
+  // whether an AI revision of it is streaming.
+  const [canvas, setCanvas] = useState<Artifact | null>(null);
+  const [canvasAiBusy, setCanvasAiBusy] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -676,6 +700,87 @@ export function ChatShell() {
     }
   }, [messages, isStreaming, activeSessionId, activeProvider, useContext]);
 
+  // ---- Canvas / Artifacts -------------------------------------------------
+
+  const handleOpenCanvas = useCallback((id: string, content: string) => {
+    const artifact = artifactFromMessage(id, content);
+    if (artifact) setCanvas(artifact);
+  }, []);
+
+  // Manual edit of the current version — mutate in place (no new version).
+  const handleCanvasEdit = useCallback((content: string) => {
+    setCanvas((prev) => {
+      if (!prev) return prev;
+      const versions = [...prev.versions];
+      versions[prev.current] = content;
+      return { ...prev, versions };
+    });
+  }, []);
+
+  const handleCanvasSelectVersion = useCallback((index: number) => {
+    setCanvas((prev) => (prev ? { ...prev, current: index } : prev));
+  }, []);
+
+  // Ask the model to revise the open artifact. Rides the normal chat stream so
+  // the iteration is part of the conversation; the reply's code block becomes a
+  // new version appended to the canvas.
+  const handleCanvasAiEdit = useCallback(async (instruction: string) => {
+    if (!canvas || !activeSessionId || isStreaming || canvasAiBusy) return;
+    const current = canvas.versions[canvas.current] ?? "";
+    const lang = canvas.language;
+    const prompt =
+      `Revise the canvas "${canvas.title}". ${instruction}\n\n` +
+      `Return the COMPLETE updated ${languageLabel(lang)} as a single fenced ` +
+      `\`\`\`${lang} code block (no commentary outside it).\n\n` +
+      `Current content:\n\`\`\`${lang}\n${current}\n\`\`\``;
+
+    const userMsg: StreamingMessage = { id: `tmp-user-${Date.now()}`, role: "user", content: instruction };
+    const assistantId = `tmp-assistant-${Date.now()}`;
+    setMessages((prev) => [...prev, userMsg, { id: assistantId, role: "assistant", content: "", streaming: true }]);
+    setIsStreaming(true);
+    setCanvasAiBusy(true);
+    const abort = new AbortController();
+    abortRef.current = abort;
+    let finalText = "";
+    try {
+      await api.streamChat(
+        activeSessionId,
+        prompt,
+        (delta) => {
+          if (delta === null) return;
+          finalText += delta;
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + delta } : m)),
+          );
+        },
+        abort.signal,
+        activeProvider?.id,
+        activeProvider?.model,
+        useContext,
+      );
+      const block = extractArtifactBlock(finalText);
+      if (block) {
+        setCanvas((prev) =>
+          prev
+            ? { ...prev, versions: [...prev.versions, block.code], current: prev.versions.length }
+            : prev,
+        );
+      } else {
+        toast("Lantern's reply had no code block to apply");
+      }
+    } catch (e) {
+      if ((e as Error)?.name !== "AbortError") toast("Canvas edit failed");
+    } finally {
+      setIsStreaming(false);
+      setCanvasAiBusy(false);
+      abortRef.current = null;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)),
+      );
+      api.listSessions().then(setSessions).catch(() => {});
+    }
+  }, [canvas, activeSessionId, isStreaming, canvasAiBusy, activeProvider, useContext]);
+
   function chatTitle() {
     return (activeSessionId ? sessions.find((s) => s.id === activeSessionId)?.title : null) ?? "Chat";
   }
@@ -867,6 +972,7 @@ export function ChatShell() {
                   onRetry={handleRetry}
                   onEdit={handleEditMessage}
                   onDelete={handleDeleteMessage}
+                  onOpenCanvas={handleOpenCanvas}
                 />
               ))}
             </div>
@@ -943,6 +1049,23 @@ export function ChatShell() {
           </div>
         </div>
       </div>
+
+      {/* Canvas / Artifacts side panel */}
+      {canvas && (
+        <div
+          className="shrink-0 hidden md:flex"
+          style={{ width: "min(46%, 720px)", minWidth: 360 }}
+        >
+          <CanvasPanel
+            artifact={canvas}
+            onEditContent={handleCanvasEdit}
+            onSelectVersion={handleCanvasSelectVersion}
+            onAiEdit={handleCanvasAiEdit}
+            onClose={() => setCanvas(null)}
+            aiBusy={canvasAiBusy}
+          />
+        </div>
+      )}
     </div>
   );
 }
