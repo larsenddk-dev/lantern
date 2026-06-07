@@ -276,6 +276,11 @@ export default function CookbookPage() {
   // gives the bundled Ollama time to finish booting before we cry wolf.
   const [waitingForOllama, setWaitingForOllama] = useState(true);
   const [pulls, setPulls] = useState<Record<string, PullState>>({});
+  // Category filter for the catalog. Values mirror tag strings on entries,
+  // plus "all" for the unfiltered view.
+  const [tagFilter, setTagFilter] = useState<
+    "all" | "vision" | "code" | "reasoning" | "small" | "large"
+  >("all");
   const abortsRef = useRef<Record<string, AbortController>>({});
 
   const refresh = useCallback(async () => {
@@ -515,19 +520,61 @@ export default function CookbookPage() {
         {/* Catalog */}
         {catalog && status?.running && (
           <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium">
-              Models{" "}
-              <span className="text-xs font-normal" style={{ color: "var(--muted-foreground)" }}>
-                · sorted by fit for your hardware
-              </span>
-            </h2>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <h2 className="text-sm font-medium">
+                Models{" "}
+                <span className="text-xs font-normal" style={{ color: "var(--muted-foreground)" }}>
+                  · sorted by fit for your hardware
+                </span>
+              </h2>
+              {/* Category filter — small pill row. "All" is the default;
+                  other pills mirror the tag set on catalog entries so the
+                  same list grows naturally as we add models. */}
+              <div className="flex gap-1 flex-wrap">
+                {([
+                  { id: "all", label: "All" },
+                  { id: "vision", label: "Vision" },
+                  { id: "code", label: "Code" },
+                  { id: "reasoning", label: "Reasoning" },
+                  { id: "small", label: "Small" },
+                  { id: "large", label: "Large" },
+                ] as const).map((f) => {
+                  const active = tagFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setTagFilter(f.id)}
+                      className="px-2 py-1 rounded-md text-[11px] transition-colors"
+                      style={{
+                        background: active ? "var(--primary)" : "transparent",
+                        color: active ? "var(--primary-foreground)" : "var(--muted-foreground)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="flex flex-col gap-3">
-              {[...catalog.models]
-                .sort((a, b) => {
-                  const order: CookbookFit[] = ["recommended", "ok", "tight", "unknown", "too_big"];
-                  return order.indexOf(a.fit) - order.indexOf(b.fit);
-                })
-                .map((m) => (
+              {(() => {
+                const order: CookbookFit[] = ["recommended", "ok", "tight", "unknown", "too_big"];
+                const filtered = catalog.models.filter((m) =>
+                  tagFilter === "all" ? true : m.tags.includes(tagFilter),
+                );
+                const sorted = [...filtered].sort(
+                  (a, b) => order.indexOf(a.fit) - order.indexOf(b.fit),
+                );
+                if (sorted.length === 0) {
+                  return (
+                    <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+                      No models in this category yet.
+                    </p>
+                  );
+                }
+                return sorted.map((m) => (
                   <ModelCard
                     key={m.id}
                     model={m}
@@ -538,7 +585,8 @@ export default function CookbookPage() {
                     onUninstall={handleUninstall}
                     onActivate={handleActivate}
                   />
-                ))}
+                ));
+              })()}
             </div>
           </section>
         )}
