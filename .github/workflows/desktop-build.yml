@@ -53,7 +53,7 @@ jobs:
           npm install
           npm run build
 
-      - name: Build FastAPI sidecar (PyInstaller, per-OS)
+      - name: Build FastAPI sidecar (PyInstaller --onedir, per-OS)
         working-directory: apps/api
         shell: bash
         run: |
@@ -62,12 +62,14 @@ jobs:
           "$PY" -m pip install --upgrade pip
           "$PY" -m pip install -r requirements.txt pyinstaller
           "$PY" -m PyInstaller lantern-api.spec
-          mkdir -p ../desktop/src-tauri/binaries
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            cp dist/lantern-api.exe "../desktop/src-tauri/binaries/lantern-api-${{ matrix.triple }}.exe"
-          else
-            cp dist/lantern-api "../desktop/src-tauri/binaries/lantern-api-${{ matrix.triple }}"
-            chmod +x "../desktop/src-tauri/binaries/lantern-api-${{ matrix.triple }}"
+          # --onedir output is dist/lantern-api/ — bundle the whole directory
+          # as a Tauri resource. Cold start drops from ~15-18s (--onefile
+          # self-extract on every launch) to ~2-3s.
+          mkdir -p ../desktop/src-tauri/sidecar
+          rm -rf ../desktop/src-tauri/sidecar/lantern-api
+          cp -R dist/lantern-api ../desktop/src-tauri/sidecar/lantern-api
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            chmod +x ../desktop/src-tauri/sidecar/lantern-api/lantern-api
           fi
 
       - name: Install desktop deps

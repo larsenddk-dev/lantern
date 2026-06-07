@@ -1,9 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for the Lantern API sidecar binary.
+# PyInstaller spec for the Lantern API sidecar.
 # Build with: pyinstaller lantern-api.spec
-# Output: dist/lantern-api  (single file, no external dependencies)
-
-import platform
+#
+# Output: dist/lantern-api/   — a directory containing the launcher exe and
+# its dependencies (the --onedir layout). The desktop app bundles this whole
+# directory as a Tauri resource, so cold start is ~2-3s instead of the
+# ~15-18s self-extract a --onefile build incurs every launch.
 
 a = Analysis(
     ['run.py'],
@@ -51,24 +53,32 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# Note: exclude_binaries=True keeps the launcher exe small; the libs go into
+# COLLECT, which produces the dist/lantern-api/ directory we ship.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='lantern-api',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    onefile=True,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='lantern-api',
 )
