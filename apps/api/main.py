@@ -4,6 +4,8 @@ import os
 import json
 import sqlite3
 import uuid
+import base64
+import binascii
 import time
 import math
 import shutil
@@ -17,7 +19,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from typing import AsyncIterator, Optional
 
@@ -56,6 +58,10 @@ DB_PATH = os.environ.get("LANTERN_DB_PATH", _DEFAULT_DB_PATH)
 # next to the DB (so tests that override LANTERN_DB_PATH stay isolated too).
 UPLOADS_DIR = os.path.join(os.path.dirname(DB_PATH) or ".", "uploads")
 
+# Chat-message attachments (images for vision models today; voice/files later)
+# live in a sibling dir keyed by attachment id. Same gitignored-data tree.
+ATTACHMENTS_DIR = os.path.join(os.path.dirname(DB_PATH) or ".", "attachments")
+
 
 def _ensure_data_dir() -> None:
     """Create the data/ directory if it does not exist (holds gitignored SQLite DB)."""
@@ -93,6 +99,21 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+            -- Multimodal attachments (images today; voice/files later) live
+            -- alongside the text content. Bytes go on disk under
+            -- data/attachments/<id>.<ext>; only metadata in the DB.
+            CREATE TABLE IF NOT EXISTS message_attachments (
+                id TEXT PRIMARY KEY,
+                message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                filename TEXT,
+                size_bytes INTEGER NOT NULL,
+                path TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_attachments_message
+                ON message_attachments(message_id);
 
             CREATE TABLE IF NOT EXISTS providers (
                 id TEXT PRIMARY KEY,
@@ -206,6 +227,11 @@ def db_get_session(session_id: str) -> Optional[dict]:
             (session_id,),
         ).fetchall()
         session["messages"] = [dict(m) for m in msgs]
+    # Decorate each message with its attachments so the UI can render
+    # thumbnails without a second roundtrip.
+    by_msg = db_list_attachments_for_session(session_id)
+    for m in session["messages"]:
+        m["attachments"] = by_msg.get(m["id"], [])
     return session
 
 
@@ -221,6 +247,151 @@ def db_append_message(session_id: str, role: str, content: str) -> dict:
             "UPDATE sessions SET updated_at = ? WHERE id = ?", (now, session_id)
         )
     return {"id": msg_id, "session_id": session_id, "role": role, "content": content, "created_at": now}
+
+
+def _ensure_attachments_dir() -> None:
+    os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
+
+
+def _ext_for_mime(mime_type: str) -> str:
+    """Map common image mime types to a file extension. Falls back to '.bin'
+    so unknown types are still persisted (we just won't open them later)."""
+    table = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+        "image/bmp": ".bmp",
+    }
+    return table.get(mime_type.lower(), ".bin")
+
+
+def db_create_attachment(
+    message_id: str,
+    *,
+    kind: str,
+    mime_type: str,
+    data: bytes,
+    filename: Optional[str] = None,
+) -> dict:
+    """Persist a single attachment for a message: bytes go to disk, metadata to
+    the DB. Returns the public dict (path is internal, not exposed)."""
+    _ensure_attachments_dir()
+    att_id = str(uuid.uuid4())
+    rel = att_id + _ext_for_mime(mime_type)
+    abs_path = os.path.join(ATTACHMENTS_DIR, rel)
+    with open(abs_path, "wb") as f:
+        f.write(data)
+    now = _now_iso()
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT INTO message_attachments "
+            "(id, message_id, kind, mime_type, filename, size_bytes, path, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (att_id, message_id, kind, mime_type, filename, len(data), rel, now),
+        )
+    return {
+        "id": att_id,
+        "message_id": message_id,
+        "kind": kind,
+        "mime_type": mime_type,
+        "filename": filename,
+        "size_bytes": len(data),
+        "created_at": now,
+    }
+
+
+def _attachment_to_public(row: dict) -> dict:
+    """Strip the on-disk path; everything else is safe to return."""
+    return {
+        "id": row["id"],
+        "message_id": row["message_id"],
+        "kind": row["kind"],
+        "mime_type": row["mime_type"],
+        "filename": row["filename"],
+        "size_bytes": row["size_bytes"],
+        "created_at": row["created_at"],
+    }
+
+
+def db_list_attachments_for_session(session_id: str) -> dict:
+    """Return {message_id: [attachments]} for every message in a session.
+    Used by db_get_session so the UI can render thumbnails in one trip."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT a.* FROM message_attachments a "
+            "JOIN messages m ON m.id = a.message_id "
+            "WHERE m.session_id = ? "
+            "ORDER BY a.created_at ASC",
+            (session_id,),
+        ).fetchall()
+    grouped: dict = {}
+    for r in rows:
+        d = dict(r)
+        grouped.setdefault(d["message_id"], []).append(_attachment_to_public(d))
+    return grouped
+
+
+def db_get_attachment(att_id: str) -> Optional[dict]:
+    """Return raw row including on-disk path (internal use — for serving bytes)."""
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM message_attachments WHERE id = ?", (att_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def db_attachments_for_message(message_id: str) -> list[dict]:
+    """Return raw rows for one message — internal helper used when building
+    the multimodal LLM payload from past turns."""
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM message_attachments WHERE message_id = ? "
+            "ORDER BY created_at ASC",
+            (message_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _llm_content_for(msg: dict) -> dict:
+    """Convert a stored message dict to the shape an OpenAI-compatible chat
+    completion expects. Plain text turns return {role, content: str}; turns
+    with image attachments return {role, content: [parts]} using the
+    vision format (`{"type":"image_url","image_url":{"url":"data:..."}}`).
+
+    Reads each attachment's bytes from disk and base64-inlines them so the
+    request is self-contained — no follow-up fetches from the model side."""
+    role = msg["role"]
+    text = msg.get("content", "") or ""
+    attachments = msg.get("attachments") or []
+    # Only image attachments contribute to the LLM payload today.
+    images = [a for a in attachments if a.get("kind") == "image"]
+    if not images:
+        return {"role": role, "content": text}
+
+    parts: list[dict] = []
+    if text:
+        parts.append({"type": "text", "text": text})
+    for att in images:
+        path = att.get("path")
+        # `attachments` coming from db_get_session are public dicts that strip
+        # `path`; fetch the row again so we have the on-disk filename.
+        if not path:
+            row = db_get_attachment(att["id"])
+            if row is None:
+                continue
+            path = row["path"]
+        full = os.path.join(ATTACHMENTS_DIR, path)
+        try:
+            with open(full, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+        except OSError:
+            continue  # missing file — skip rather than crashing the whole request
+        parts.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{att['mime_type']};base64,{b64}"},
+        })
+    return {"role": role, "content": parts}
 
 
 def db_update_message(message_id: str, content: str) -> Optional[dict]:
@@ -244,6 +415,17 @@ def db_update_message(message_id: str, content: str) -> Optional[dict]:
     return dict(updated)
 
 
+def _purge_attachment_files(rows: list[dict]) -> None:
+    """Remove the on-disk bytes for the given attachment rows. Best-effort —
+    a missing file just means we already cleaned it up."""
+    for r in rows:
+        path = os.path.join(ATTACHMENTS_DIR, r["path"])
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def db_delete_message(message_id: str) -> bool:
     """Delete a single message. Its star (if any) cascades away."""
     with _get_conn() as conn:
@@ -253,12 +435,17 @@ def db_delete_message(message_id: str) -> bool:
         if row is None:
             return False
         # FK cascade isn't enabled on this connection, so clear the star explicitly.
+        attachments = conn.execute(
+            "SELECT * FROM message_attachments WHERE message_id = ?", (message_id,)
+        ).fetchall()
         conn.execute("DELETE FROM message_stars WHERE message_id = ?", (message_id,))
+        conn.execute("DELETE FROM message_attachments WHERE message_id = ?", (message_id,))
         conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
         conn.execute(
             "UPDATE sessions SET updated_at = ? WHERE id = ?",
             (_now_iso(), row["session_id"]),
         )
+    _purge_attachment_files([dict(a) for a in attachments])
     return True
 
 
@@ -267,8 +454,21 @@ def db_delete_session(session_id: str) -> bool:
         exists = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
         if exists is None:
             return False
+        # Collect attachment rows first so we can remove the files after the
+        # cascade in the DB.
+        attachments = conn.execute(
+            "SELECT a.* FROM message_attachments a "
+            "JOIN messages m ON m.id = a.message_id WHERE m.session_id = ?",
+            (session_id,),
+        ).fetchall()
+        conn.execute(
+            "DELETE FROM message_attachments WHERE message_id IN "
+            "(SELECT id FROM messages WHERE session_id = ?)",
+            (session_id,),
+        )
         conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    _purge_attachment_files([dict(a) for a in attachments])
     return True
 
 
@@ -1853,12 +2053,22 @@ class RenameSessionRequest(BaseModel):
     title: str
 
 
+class ChatAttachment(BaseModel):
+    """One image (and later: file/voice) attached to the next user message.
+    Bytes are sent inline base64 — sized to ~10 MB max per attachment in
+    practice; the LLM will refuse anything wildly bigger anyway."""
+    filename: Optional[str] = None
+    mime_type: str
+    data_base64: str
+
+
 class ChatRequest(BaseModel):
     session_id: str
     message: str
     provider_id: Optional[str] = None
     model: Optional[str] = None
     use_context: bool = True
+    attachments: list[ChatAttachment] = []
 
 
 class RagSearchRequest(BaseModel):
@@ -2444,6 +2654,31 @@ def list_starred_messages():
 
 
 # ---------------------------------------------------------------------------
+# Attachments route — serve the raw bytes for image thumbnails in chat
+# ---------------------------------------------------------------------------
+
+@app.get("/attachments/{attachment_id}")
+def get_attachment(attachment_id: str):
+    """Return the raw bytes of a stored attachment with its original mime type.
+    Used by the chat UI to render inline thumbnails next to messages."""
+    row = db_get_attachment(attachment_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    full = os.path.join(ATTACHMENTS_DIR, row["path"])
+    try:
+        with open(full, "rb") as f:
+            data = f.read()
+    except OSError:
+        raise HTTPException(status_code=410, detail="Attachment file missing")
+    return Response(
+        content=data,
+        media_type=row["mime_type"],
+        # Long cache; the id never changes once an attachment lands.
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Stats route — high-level counts for the Stats page
 # ---------------------------------------------------------------------------
 
@@ -2636,13 +2871,27 @@ async def chat(body: ChatRequest):
     if body.model:
         resolved_model = body.model
 
-    # Persist the user message
-    db_append_message(body.session_id, "user", body.message)
+    # Persist the user message, then any attachments tied to it. We do this
+    # before building the history so the new turn carries its images too.
+    user_msg = db_append_message(body.session_id, "user", body.message)
+    for att in body.attachments:
+        try:
+            raw = base64.b64decode(att.data_base64, validate=True)
+        except (ValueError, binascii.Error):
+            raise HTTPException(status_code=400, detail="Invalid base64 attachment")
+        db_create_attachment(
+            user_msg["id"],
+            kind="image",
+            mime_type=att.mime_type,
+            data=raw,
+            filename=att.filename,
+        )
 
-    # Build message list for the LLM
+    # Build message list for the LLM. Past turns that had image attachments
+    # come back as OpenAI vision-style multipart content so the model sees the
+    # same context the user did when they wrote those messages.
     history = [
-        {"role": m["role"], "content": m["content"]}
-        for m in session["messages"]
+        _llm_content_for(m) for m in session["messages"]
     ]
 
     # RAG: inject pinned memories + semantically relevant context as a system
@@ -2657,7 +2906,13 @@ async def chat(body: ChatRequest):
             )
             history.insert(0, {"role": "system", "content": context})
 
-    history.append({"role": "user", "content": body.message})
+    # The brand-new user turn (with any attachments just saved above).
+    new_turn = _llm_content_for({
+        "role": "user",
+        "content": body.message,
+        "attachments": db_attachments_for_message(user_msg["id"]),
+    })
+    history.append(new_turn)
 
     async def generate():
         collected: list[str] = []

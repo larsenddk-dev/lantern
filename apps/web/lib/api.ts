@@ -45,6 +45,8 @@ import type {
   CookbookCatalog,
   CookbookInstalledModel,
   CookbookPullEvent,
+  ChatAttachmentInput,
+  MessageAttachment,
 } from "./types";
 import { toast } from "./toast";
 
@@ -76,6 +78,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health(): Promise<{ status: string }> {
     return request("/health");
+  },
+
+  /** Build the absolute URL to a stored attachment's bytes — used as the
+   * src of <img> thumbnails in chat. Returns a stable URL that the browser
+   * can cache (the backend sets a long Cache-Control on this endpoint). */
+  attachmentUrl(attachmentId: string): string {
+    return `${BASE_URL}/attachments/${attachmentId}`;
   },
 
   createSession(title?: string): Promise<Session> {
@@ -118,11 +127,13 @@ export const api = {
     providerId?: string,
     model?: string,
     useContext: boolean = true,
+    attachments?: ChatAttachmentInput[],
   ): Promise<void> {
     const body: Record<string, unknown> = { session_id: sessionId, message };
     if (providerId) body.provider_id = providerId;
     if (model) body.model = model;
     if (!useContext) body.use_context = false;
+    if (attachments && attachments.length) body.attachments = attachments;
 
     const res = await fetch(`${BASE_URL}/chat`, {
       method: "POST",
@@ -582,4 +593,5 @@ export type {
   Prompt, CreatePromptPayload, UpdatePromptPayload,
   StarredMessage, Stats,
   CookbookStatus, CookbookCatalog, CookbookInstalledModel, CookbookPullEvent,
+  ChatAttachmentInput, MessageAttachment,
 };

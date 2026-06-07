@@ -1,8 +1,29 @@
+export interface MessageAttachment {
+  id: string;
+  message_id: string;
+  kind: "image";
+  mime_type: string;
+  filename: string | null;
+  size_bytes: number;
+  created_at: string;
+}
+
 export interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  attachments?: MessageAttachment[];
+}
+
+/**
+ * Image (today) attached to an outgoing chat turn — sent inline base64
+ * so the call is self-contained and we don't need a pre-upload roundtrip.
+ */
+export interface ChatAttachmentInput {
+  filename?: string;
+  mime_type: string;
+  data_base64: string;
 }
 
 export interface Session {

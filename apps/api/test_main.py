@@ -1395,6 +1395,173 @@ def test_cookbook_delete_propagates_ollama_failure(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Tests — Vision / image attachments in chat
+# ---------------------------------------------------------------------------
+
+# A 1x1 transparent PNG, the smallest valid image we can construct without
+# a binary fixture file. Keeps the tests self-contained.
+import base64 as _b64  # noqa: E402
+_TINY_PNG_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "890000000d49444154789c6300010000000500010d0a2db40000000049454e44"
+    "ae426082"
+)
+_TINY_PNG_B64 = _b64.b64encode(_TINY_PNG_BYTES).decode()
+
+
+def test_chat_attachment_is_saved_and_replayed(monkeypatch):
+    """End-to-end vision flow: send a chat with an image, confirm the LLM
+    sees vision-format content, confirm the attachment lands in the
+    session response, and that /attachments/{id} returns the bytes."""
+    captured: dict = {}
+
+    async def _fake_stream(messages, **kwargs):
+        captured["messages"] = messages
+        for token in ["I", " see"]:
+            yield token
+
+    monkeypatch.setattr(main, "stream_chat_completion", _fake_stream)
+
+    sess = client.post("/sessions", json={"title": "vision"}).json()
+    with client.stream("POST", "/chat", json={
+        "session_id": sess["id"],
+        "message": "What's in this?",
+        "use_context": False,
+        "attachments": [
+            {"filename": "pixel.png", "mime_type": "image/png",
+             "data_base64": _TINY_PNG_B64},
+        ],
+    }) as resp:
+        assert resp.status_code == 200
+        b"".join(resp.iter_bytes())
+
+    # The user turn we sent should arrive at the LLM as multimodal content
+    user_turn = captured["messages"][-1]
+    assert user_turn["role"] == "user"
+    assert isinstance(user_turn["content"], list)
+    types = [p["type"] for p in user_turn["content"]]
+    assert "text" in types and "image_url" in types
+    img_part = next(p for p in user_turn["content"] if p["type"] == "image_url")
+    assert img_part["image_url"]["url"].startswith("data:image/png;base64,")
+
+    # Session detail should include the attachment metadata on the user msg
+    detail = client.get(f"/sessions/{sess['id']}").json()
+    user_msg = detail["messages"][0]
+    assert user_msg["role"] == "user"
+    assert len(user_msg["attachments"]) == 1
+    att = user_msg["attachments"][0]
+    assert att["mime_type"] == "image/png"
+    assert att["filename"] == "pixel.png"
+    assert att["size_bytes"] == len(_TINY_PNG_BYTES)
+    assert "path" not in att  # never leak the on-disk location
+
+    # The bytes endpoint serves the real PNG
+    b = client.get(f"/attachments/{att['id']}")
+    assert b.status_code == 200
+    assert b.headers["content-type"] == "image/png"
+    assert b.content == _TINY_PNG_BYTES
+
+
+def test_chat_text_only_unchanged_shape(monkeypatch):
+    """A text-only chat (no attachments) must still send a plain-string
+    content to the LLM — anything else breaks providers that don't speak
+    the vision format."""
+    captured: dict = {}
+
+    async def _fake_stream(messages, **kwargs):
+        captured["messages"] = messages
+        yield "ok"
+
+    monkeypatch.setattr(main, "stream_chat_completion", _fake_stream)
+    sess = client.post("/sessions", json={"title": "plain"}).json()
+    with client.stream("POST", "/chat", json={
+        "session_id": sess["id"], "message": "hi", "use_context": False,
+    }) as resp:
+        b"".join(resp.iter_bytes())
+
+    user_turn = captured["messages"][-1]
+    assert user_turn == {"role": "user", "content": "hi"}
+
+
+def test_chat_rejects_invalid_base64(monkeypatch):
+    async def _fake_stream(*a, **kw):
+        yield "x"
+    monkeypatch.setattr(main, "stream_chat_completion", _fake_stream)
+    sess = client.post("/sessions", json={"title": "bad b64"}).json()
+    resp = client.post("/chat", json={
+        "session_id": sess["id"], "message": "hi", "use_context": False,
+        "attachments": [{"mime_type": "image/png", "data_base64": "###not_b64"}],
+    })
+    assert resp.status_code == 400
+
+
+def test_attachment_get_404_for_unknown_id():
+    assert client.get("/attachments/nope").status_code == 404
+
+
+def test_delete_message_purges_attachments(monkeypatch):
+    async def _fake_stream(*a, **kw):
+        yield "ok"
+    monkeypatch.setattr(main, "stream_chat_completion", _fake_stream)
+    sess = client.post("/sessions", json={"title": "delete-att"}).json()
+    with client.stream("POST", "/chat", json={
+        "session_id": sess["id"], "message": "img!", "use_context": False,
+        "attachments": [
+            {"mime_type": "image/png", "data_base64": _TINY_PNG_B64},
+        ],
+    }) as resp:
+        b"".join(resp.iter_bytes())
+
+    detail = client.get(f"/sessions/{sess['id']}").json()
+    user_msg = detail["messages"][0]
+    att_id = user_msg["attachments"][0]["id"]
+    assert client.get(f"/attachments/{att_id}").status_code == 200
+
+    # Delete the message — attachment should be gone too (bytes + DB row)
+    client.delete(f"/messages/{user_msg['id']}")
+    assert client.get(f"/attachments/{att_id}").status_code == 404
+
+
+def test_replay_includes_past_image_in_history(monkeypatch):
+    """When a vision-capable model continues a conversation that earlier
+    included an image, the image must come back as part of the historical
+    user turn — otherwise the model forgets what it 'saw'."""
+    sess = client.post("/sessions", json={"title": "replay"}).json()
+
+    async def _first(*a, **kw):
+        yield "I see"
+    monkeypatch.setattr(main, "stream_chat_completion", _first)
+    with client.stream("POST", "/chat", json={
+        "session_id": sess["id"], "message": "look", "use_context": False,
+        "attachments": [
+            {"mime_type": "image/png", "data_base64": _TINY_PNG_B64},
+        ],
+    }) as resp:
+        b"".join(resp.iter_bytes())
+
+    captured: dict = {}
+
+    async def _second(messages, **kw):
+        captured["messages"] = messages
+        yield "more"
+    monkeypatch.setattr(main, "stream_chat_completion", _second)
+    with client.stream("POST", "/chat", json={
+        "session_id": sess["id"], "message": "follow up", "use_context": False,
+    }) as resp:
+        b"".join(resp.iter_bytes())
+
+    # Find the prior user turn ("look") in the captured history
+    look_turn = next(m for m in captured["messages"]
+                     if m["role"] == "user" and any(
+                         isinstance(p, dict) and p.get("type") == "text" and p.get("text") == "look"
+                         for p in (m["content"] if isinstance(m["content"], list) else [])
+                     ))
+    assert any(
+        p.get("type") == "image_url" for p in look_turn["content"]
+    ), "replayed history should still carry the original image"
+
+
+# ---------------------------------------------------------------------------
 # Tests — Stats + export
 # ---------------------------------------------------------------------------
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw, Pause, Play, ListChecks, X, PanelRight, KeyRound, ArrowRight } from "lucide-react";
+import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw, Pause, Play, ListChecks, X, PanelRight, KeyRound, ArrowRight, Paperclip } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -26,6 +26,46 @@ interface StreamingMessage {
   content: string;
   streaming?: boolean;
   starred?: boolean;
+  attachments?: import("@/lib/types").MessageAttachment[];
+}
+
+/** A composer-side attachment, before it's been POSTed. Carries the inline
+ * preview (object URL) so we can show it next to the textarea without
+ * round-tripping through the backend. */
+interface DraftAttachment {
+  id: string;            // local-only id; never sent
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  data_base64: string;   // sent to the API
+  previewUrl: string;    // blob: URL for the <img> preview
+}
+
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB per attachment
+const SUPPORTED_IMAGE_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+
+/** Read a File into a base64 string (no data: prefix). */
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("FileReader returned non-string"));
+        return;
+      }
+      // result is "data:<mime>;base64,<payload>" — strip the prefix.
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -139,12 +179,54 @@ function MessageBubble({
     );
   }
 
+  const imageAttachments = (msg.attachments ?? []).filter(
+    (a) => a.kind === "image",
+  );
+
+  // While the message is still optimistic (id starts with "draft-"), we
+  // render from the blob: URL we created at upload time. Once the page
+  // is reloaded, the real attachment id surfaces and the API URL takes over.
+  function attachmentSrc(att: { id: string; _previewUrl?: string }): string {
+    if (att.id.startsWith("draft-") && att._previewUrl) return att._previewUrl;
+    return api.attachmentUrl(att.id);
+  }
+
   return (
     <div className={cn("group flex flex-col w-full", isUser ? "items-end" : "items-start")}>
+      {/* Image thumbnails. Sit above the bubble on user messages so the
+          textual reply still reads bottom-up; the bubble width adapts. */}
+      {imageAttachments.length > 0 && (
+        <div className={cn("flex flex-wrap gap-2 mb-1 max-w-[72%]",
+                           isUser ? "justify-end" : "justify-start")}>
+          {imageAttachments.map((att) => {
+            const src = attachmentSrc(att as { id: string; _previewUrl?: string });
+            return (
+              <a
+                key={att.id}
+                href={src}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-lg overflow-hidden border"
+                style={{ borderColor: "var(--border)" }}
+                title={att.filename ?? "image"}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={src}
+                  alt={att.filename ?? "attached image"}
+                  className="block max-h-48 max-w-[16rem] object-cover"
+                />
+              </a>
+            );
+          })}
+        </div>
+      )}
       <div
         className={cn(
           "max-w-[72%] px-4 py-2 rounded-2xl text-sm leading-relaxed break-words",
-          isUser ? "rounded-br-sm whitespace-pre-wrap" : "rounded-bl-sm"
+          isUser ? "rounded-br-sm whitespace-pre-wrap" : "rounded-bl-sm",
+          // If there's no text but there ARE images, hide the empty bubble.
+          !msg.content && imageAttachments.length > 0 && "hidden"
         )}
         style={
           isUser
@@ -161,7 +243,7 @@ function MessageBubble({
           />
         )}
       </div>
-      {!msg.streaming && msg.content.trim() && (
+      {!msg.streaming && (msg.content.trim() || imageAttachments.length > 0) && (
         <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={copy}
@@ -358,11 +440,71 @@ export function ChatShell() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Pause/resume: while paused, incoming deltas accumulate here instead of
   // rendering, and flush back into the message on resume / stream end.
   const pausedRef = useRef(false);
   const pendingRef = useRef("");
+
+  // Composer-side images queued for the NEXT send. Each holds the bytes
+  // (base64, what the API wants) plus a blob: URL we use for the inline
+  // preview thumbnail. We revoke the blob URLs on cleanup to avoid leaking
+  // memory across long sessions.
+  const [drafts, setDrafts] = useState<DraftAttachment[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+
+  const addFiles = useCallback(async (files: FileList | File[] | null) => {
+    if (!files) return;
+    const accepted: DraftAttachment[] = [];
+    for (const file of Array.from(files)) {
+      if (!SUPPORTED_IMAGE_MIME.has(file.type)) {
+        toast(`Unsupported file type: ${file.type || file.name}`);
+        continue;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        toast(`${file.name} is too large (max 10 MB)`);
+        continue;
+      }
+      try {
+        const data_base64 = await readFileAsBase64(file);
+        accepted.push({
+          id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          filename: file.name,
+          mime_type: file.type,
+          size_bytes: file.size,
+          data_base64,
+          previewUrl: URL.createObjectURL(file),
+        });
+      } catch {
+        toast(`Couldn't read ${file.name}`);
+      }
+    }
+    if (accepted.length) setDrafts((prev) => [...prev, ...accepted]);
+  }, []);
+
+  const removeDraft = useCallback((id: string) => {
+    setDrafts((prev) => {
+      const gone = prev.find((d) => d.id === id);
+      if (gone) URL.revokeObjectURL(gone.previewUrl);
+      return prev.filter((d) => d.id !== id);
+    });
+  }, []);
+
+  const clearDrafts = useCallback(() => {
+    setDrafts((prev) => {
+      prev.forEach((d) => URL.revokeObjectURL(d.previewUrl));
+      return [];
+    });
+  }, []);
+
+  // Revoke any remaining blob URLs on unmount so we don't leak.
+  useEffect(() => {
+    return () => {
+      drafts.forEach((d) => URL.revokeObjectURL(d.previewUrl));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -404,6 +546,7 @@ export function ChatShell() {
           role: m.role,
           content: m.content,
           starred: starredIds.has(m.id),
+          attachments: m.attachments ?? [],
         }))
       );
     } catch (e) {
@@ -480,7 +623,8 @@ export function ChatShell() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || isStreaming) return;
+    // Allow sending with an image and no text — vision-only "what's this?".
+    if ((!text && drafts.length === 0) || isStreaming) return;
     setError(null);
 
     let sessionId = activeSessionId;
@@ -488,7 +632,9 @@ export function ChatShell() {
     // Auto-create session if none is active
     if (!sessionId) {
       try {
-        const session = await api.createSession(text.slice(0, 50));
+        const session = await api.createSession(
+          (text || drafts[0]?.filename || "Image chat").slice(0, 50),
+        );
         setSessions((prev) => [session, ...prev]);
         sessionId = session.id;
         setActiveSessionId(session.id);
@@ -498,11 +644,31 @@ export function ChatShell() {
       }
     }
 
+    // Snapshot the drafts for sending; clear the composer immediately so the
+    // user sees the message + thumbnails flip from composer to history.
+    const sending = drafts;
+    setDrafts([]);
+    const optimisticAttachments = sending.map((d) => ({
+      id: d.id,            // local id; replaced on next session reload
+      message_id: "",
+      kind: "image" as const,
+      mime_type: d.mime_type,
+      filename: d.filename,
+      size_bytes: d.size_bytes,
+      created_at: new Date().toISOString(),
+      // Object URL: works for the optimistic render only.
+      _previewUrl: d.previewUrl,
+    }));
+
     // Optimistic user message
     const userMsg: StreamingMessage = {
       id: `tmp-user-${Date.now()}`,
       role: "user",
       content: text,
+      // Cast: the optimistic attachment carries a transient previewUrl
+      // field that the persisted type doesn't have; the renderer falls
+      // back to the API URL once a real id is in place.
+      attachments: optimisticAttachments as unknown as StreamingMessage["attachments"],
     };
     const assistantMsgId = `tmp-assistant-${Date.now()}`;
     const assistantMsg: StreamingMessage = {
@@ -554,6 +720,11 @@ export function ChatShell() {
         activeProvider?.id,
         activeProvider?.model,
         useContext,
+        sending.map((d) => ({
+          filename: d.filename,
+          mime_type: d.mime_type,
+          data_base64: d.data_base64,
+        })),
       );
     } catch (e) {
       if ((e as Error)?.name !== "AbortError") {
@@ -574,8 +745,13 @@ export function ChatShell() {
           m.streaming ? { ...m, content: m.content + buffered, streaming: false } : m
         )
       );
+      // The persisted attachments come back next time loadSession runs.
+      // Revoke the object URLs we held for the optimistic render so we don't
+      // leak — by then the <img>s have either been replaced by real /attachments
+      // URLs (after a refresh) or we just lose the inline preview on next mount.
+      sending.forEach((d) => URL.revokeObjectURL(d.previewUrl));
     }
-  }, [input, isStreaming, activeSessionId, useContext]);
+  }, [input, drafts, isStreaming, activeSessionId, activeProvider, useContext]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -1032,9 +1208,70 @@ export function ChatShell() {
 
         {/* Composer */}
         <div
-          className="shrink-0 px-5 pb-5 pt-2"
+          className="shrink-0 px-5 pb-5 pt-2 relative"
           style={{ borderTop: "1px solid var(--border)" }}
+          onDragEnter={(e) => {
+            if (e.dataTransfer?.types?.includes("Files")) {
+              e.preventDefault();
+              setDragOver(true);
+            }
+          }}
+          onDragLeave={(e) => {
+            // Leaving the composer wrapper itself, not just child elements
+            if (e.currentTarget === e.target) setDragOver(false);
+          }}
+          onDragOver={(e) => {
+            if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            addFiles(e.dataTransfer?.files ?? null);
+          }}
         >
+          {dragOver && (
+            <div
+              className="absolute inset-3 z-10 rounded-xl border-2 border-dashed flex items-center justify-center pointer-events-none"
+              style={{
+                borderColor: "var(--primary)",
+                background: "color-mix(in srgb, var(--primary) 8%, transparent)",
+                color: "var(--primary)",
+              }}
+            >
+              <p className="text-sm font-medium">Drop image to attach</p>
+            </div>
+          )}
+
+          {/* Draft thumbnails — what's queued for the next send */}
+          {drafts.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {drafts.map((d) => (
+                <div
+                  key={d.id}
+                  className="relative group/draft rounded-md overflow-hidden border"
+                  style={{ borderColor: "var(--border)" }}
+                  title={`${d.filename} · ${(d.size_bytes / 1024).toFixed(0)} KB`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={d.previewUrl}
+                    alt={d.filename}
+                    className="block w-14 h-14 object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeDraft(d.id)}
+                    aria-label={`Remove ${d.filename}`}
+                    className="absolute top-0.5 right-0.5 p-0.5 rounded-full transition-opacity opacity-0 group-hover/draft:opacity-100"
+                    style={{ background: "rgba(0,0,0,0.6)", color: "white" }}
+                  >
+                    <X size={10} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div
             className="flex items-end gap-2 rounded-xl px-3 py-2"
             style={{
@@ -1042,13 +1279,55 @@ export function ChatShell() {
               background: "var(--muted)",
             }}
           >
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isStreaming}
+              className="shrink-0 p-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-30"
+              style={{ color: "var(--muted-foreground)" }}
+              aria-label="Attach image"
+              title="Attach image (or drag-drop / paste into the message)"
+            >
+              <Paperclip size={16} />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                addFiles(e.target.files);
+                // Reset so the same file can be picked twice in a row.
+                e.target.value = "";
+              }}
+            />
             <textarea
               ref={textareaRef}
               rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Message… (Enter to send, Shift+Enter for newline)"
+              onPaste={(e) => {
+                const items = e.clipboardData?.items;
+                if (!items) return;
+                const files: File[] = [];
+                for (const item of Array.from(items)) {
+                  if (item.kind === "file") {
+                    const f = item.getAsFile();
+                    if (f && SUPPORTED_IMAGE_MIME.has(f.type)) files.push(f);
+                  }
+                }
+                if (files.length) {
+                  e.preventDefault();
+                  addFiles(files);
+                }
+              }}
+              placeholder={
+                drafts.length > 0
+                  ? "Say something about the image…"
+                  : "Message… (Enter to send, Shift+Enter for newline)"
+              }
               disabled={isStreaming}
               className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:opacity-50 max-h-40 overflow-y-auto"
               style={{ color: "var(--foreground)" }}
@@ -1067,7 +1346,7 @@ export function ChatShell() {
             )}
             <button
               onClick={isStreaming ? handleStop : handleSend}
-              disabled={!isStreaming && !input.trim()}
+              disabled={!isStreaming && !input.trim() && drafts.length === 0}
               className="shrink-0 p-1.5 rounded-lg transition-opacity disabled:opacity-30"
               style={{
                 background: "var(--primary)",
