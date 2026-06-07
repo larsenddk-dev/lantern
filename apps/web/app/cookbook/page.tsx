@@ -222,6 +222,9 @@ export default function CookbookPage() {
   const [installed, setInstalled] = useState<CookbookInstalledModel[]>([]);
   const [activeModel, setActiveModel] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Quietly hide the "Ollama isn't running" panel for ~15s after mount —
+  // gives the bundled Ollama time to finish booting before we cry wolf.
+  const [waitingForOllama, setWaitingForOllama] = useState(true);
   const [pulls, setPulls] = useState<Record<string, PullState>>({});
   const abortsRef = useRef<Record<string, AbortController>>({});
 
@@ -244,6 +247,39 @@ export default function CookbookPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // While Ollama is still booting (typically <1s but up to ~10s on first
+  // launch), /cookbook/status returns running:false. Poll quietly for ~15s
+  // before resigning to "Ollama isn't running", so the user doesn't see a
+  // spurious "Install Ollama" panel on a perfectly healthy app.
+  useEffect(() => {
+    if (loading || status?.running) {
+      setWaitingForOllama(false);
+      return;
+    }
+    let attempts = 0;
+    const t = setInterval(async () => {
+      attempts += 1;
+      try {
+        const s = await api.cookbookStatus();
+        if (s.running) {
+          setStatus(s);
+          setWaitingForOllama(false);
+          refresh();
+          clearInterval(t);
+          return;
+        }
+      } catch {
+        /* keep trying silently */
+      }
+      if (attempts >= 15) {
+        // Stop pretending — show the "not running" panel so user can act.
+        setWaitingForOllama(false);
+        clearInterval(t);
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [loading, status?.running, refresh]);
 
   // Re-poll the installed list while at least one pull is in flight, so the
   // "Use in chat" button shows up as soon as the model lands.
@@ -343,6 +379,16 @@ export default function CookbookPage() {
         {/* Status + hardware strip */}
         {loading ? (
           <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>Loading…</p>
+        ) : !status?.running && waitingForOllama ? (
+          <div
+            className="p-4 rounded-lg border flex items-center gap-3"
+            style={{ borderColor: "var(--border)", background: "var(--muted)" }}
+          >
+            <Loader2 size={16} className="animate-spin" style={{ color: "var(--muted-foreground)" }} aria-hidden="true" />
+            <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>
+              Starting the local engine…
+            </p>
+          </div>
         ) : !status?.running ? (
           <div className="p-4 rounded-lg border flex flex-col gap-3"
                style={{ borderColor: "var(--border)", background: "var(--muted)" }}>
