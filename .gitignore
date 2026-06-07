@@ -43,4 +43,7 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Note: Nogra runtime noise is ignored by .nogra/.gitignore (kept local).
+# --- Nogra workspace state (kept local, not published) ---
+# Briefs, run transcripts, transport artifacts and checkpoints are internal
+# workflow state — they live on disk but stay out of the public repo.
+.nogra/

@@ -247,5 +247,6 @@ but not modify, redistribute, or sell it. No warranty.
 ## Workflow
 
 This repo is driven with **[Nogra](https://github.com/nograai/nogra-claude-marketplace)**.
-Local Nogra state lives in [`.nogra/`](.nogra/); see [`CLAUDE.md`](CLAUDE.md)
-for the workspace contract.
+Nogra keeps its state in a local `.nogra/` directory (gitignored — it's internal
+workflow state, not part of the release); see [`CLAUDE.md`](CLAUDE.md) for the
+workspace contract.
