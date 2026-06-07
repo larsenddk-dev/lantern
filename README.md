@@ -13,7 +13,14 @@ a cloud provider.
 > Cookbook for installing local models in one click. Installs and launches on
 > macOS/Windows/Linux. **81 backend tests passing**, web build clean.
 
-<!-- Add a screenshot of the Cookbook or Chat page here when you have one -->
+## Screenshots
+
+|  |  |
+|---|---|
+| **Plug-and-play onboarding** — bring an API key or run a model locally | **Chat** — streaming, Markdown + code, export, model switcher |
+| ![Onboarding](docs/screenshots/01-welcome.png) | ![Chat](docs/screenshots/02-chat.png) |
+| **Cookbook** — hardware-aware local model picker | **Settings** — mix local + cloud providers |
+| ![Cookbook](docs/screenshots/03-cookbook.png) | ![Settings](docs/screenshots/04-settings.png) |
 
 ## ⬇️ Download & install (just want to use it?)
 
@@ -37,17 +44,18 @@ Grab the installer for your OS from the
 
 ### Your first 60 seconds
 
-1. **Launch Lantern.** The first thing you see is the **Cookbook** — a list of
-   local AI models, sized and ranked for your hardware (RAM, GPU detected
-   automatically).
-2. **Click "Install"** on a recommended model. For most people on 8-16 GB RAM,
-   that's **Llama 3.2 3B** (2 GB download) or **Llama 3.1 8B** (4.9 GB).
-3. When the download finishes, click **"Use in chat"** — Lantern flips to the
-   Chat page with that model active. Start typing.
+1. **Launch Lantern.** On first run you land on a **Welcome** screen with two
+   ways to get started — pick whichever you prefer.
+2. **Easiest — run a model locally:** open the **Cookbook**, a list of local AI
+   models sized and ranked for your hardware (RAM, GPU detected automatically).
+   Click **"Install"** on a recommended model — for most people on 8-16 GB RAM
+   that's **Llama 3.2 3B** (2 GB) or **Llama 3.1 8B** (4.9 GB) — then **"Use in
+   chat"**. No accounts, no API keys, no cloud; the model runs on your hardware.
+3. **Or bring an API key:** open **Settings → Add provider**, pick a preset with
+   a free tier (Gemini, Cerebras, Groq…), grab a key from the linked page, paste
+   it, and you're live in seconds.
 
-That's it. No accounts, no API keys, no cloud — the model runs on your
-hardware. The app is also a fully featured workspace once you're in: see the
-sidebar.
+Either way you're then in a fully featured workspace — explore the sidebar.
 
 ### Want to use a cloud model too?
 
@@ -85,11 +93,11 @@ others are productivity tools you'll discover as you use it.
 | Provider | Base URL | Free model example |
 |---|---|---|
 | Local (bundled) | `http://127.0.0.1:11434/v1` | whatever you install in Cookbook |
-| OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini` |
-| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.0-flash` |
+| OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini` (or any `…:free` id) |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.5-flash` |
 | Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
 | Mistral | `https://api.mistral.ai/v1` | `mistral-small-latest` |
-| Cerebras | `https://api.cerebras.ai/v1` | `llama-4-scout-17b-16e-instruct` |
+| Cerebras | `https://api.cerebras.ai/v1` | `gpt-oss-120b` |
 
 API keys you enter live **only** in `apps/api/data/lantern.db` (gitignored).
 Nothing is sent to any third party that isn't the provider you explicitly
@@ -158,8 +166,8 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000 — first-run routes you to `/cookbook`, returning
-users go to `/chat`.
+Open http://localhost:3000 — first-run (no provider configured yet) routes you
+to `/welcome` to pick a setup path; returning users go to `/chat`.
 
 ### 4. (Optional) Install Ollama locally for Cookbook to work
 
