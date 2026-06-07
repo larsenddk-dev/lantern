@@ -1777,7 +1777,7 @@ async def lifespan(app: FastAPI):
 # App
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Lantern API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Lantern API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -226,7 +226,7 @@ git push --tags
 
 ## License
 
-TBD — likely MIT.
+[MIT](./LICENSE) — use it, fork it, ship it. No warranty.
 
 ## Workflow
 
