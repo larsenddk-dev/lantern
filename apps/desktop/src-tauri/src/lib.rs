@@ -15,6 +15,22 @@ struct Sidecars {
 
 const OLLAMA_PORT: u16 = 11434;
 
+// Windows: spawn child processes without flashing a console window. The
+// PyInstaller sidecar (and Ollama) are console-subsystem binaries, so without
+// this flag a black terminal pops up next to the app on every launch.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Apply the no-console-window creation flag on Windows; no-op elsewhere.
+fn hide_console(cmd: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -100,12 +116,12 @@ fn spawn_lantern_api(resource_dir: &PathBuf, app_data_dir: &PathBuf) -> std::io:
     std::fs::create_dir_all(&db_dir).ok();
     let db_path = db_dir.join("lantern.db");
 
-    let child = Command::new(&exe_path)
-        .env("LANTERN_DB_PATH", &db_path)
+    let mut cmd = Command::new(&exe_path);
+    cmd.env("LANTERN_DB_PATH", &db_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+        .stderr(Stdio::null());
+    let child = hide_console(&mut cmd).spawn()?;
     Ok(child.id())
 }
 
@@ -132,16 +148,16 @@ fn spawn_ollama(resource_dir: &PathBuf, app_data_dir: &PathBuf) -> std::io::Resu
     let models_dir = app_data_dir.join("ollama-models");
     std::fs::create_dir_all(&models_dir).ok();
 
-    let child = Command::new(&exe_path)
-        .arg("serve")
+    let mut cmd = Command::new(&exe_path);
+    cmd.arg("serve")
         .env("OLLAMA_HOST", format!("127.0.0.1:{}", OLLAMA_PORT))
         .env("OLLAMA_MODELS", &models_dir)
         // Headless. Ollama otherwise tries to register a tray icon, etc.
         .env("OLLAMA_NEW_ENGINE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+        .stderr(Stdio::null());
+    let child = hide_console(&mut cmd).spawn()?;
     Ok(Some(child.id()))
 }
 
