@@ -15,6 +15,13 @@ on:
   push:
     tags: ["v*"]
 
+# tauri-action creates a draft GitHub Release on a tag push, which needs the
+# GITHUB_TOKEN to have write access to repository contents. Without this the
+# build itself succeeds but the upload step fails with
+# "Resource not accessible by integration".
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
