@@ -3,10 +3,12 @@
 > A self-hosted AI workspace — **local-first, privacy-first.** Carry your own light.
 
 Lantern is your own ChatGPT/Claude-style workspace, running on **your** hardware
-with **your** data. It ships with a **bundled local AI engine** (Ollama), so you
-just download, pick a model, and start chatting — no command line, no separate
-installs, nothing leaves your machine unless you explicitly route a chat through
-a cloud provider.
+with **your** data. The download is small and quick — bring your own provider
+API key (each has a free tier) and you're chatting in seconds. Want fully local,
+offline models instead? Install [Ollama](https://ollama.com/download) and
+Lantern's hardware-aware **Cookbook** downloads a model that fits, in one click.
+Nothing leaves your machine unless you explicitly route a chat through a cloud
+provider.
 
 > **Status:** v1 desktop app — Chat, Agent, Compare, Research, Documents, Notes,
 > Tasks, Memory, Prompts, Stars, Email, Calendar, Stats, and a hardware-aware
@@ -29,9 +31,14 @@ Grab the installer for your OS from the
 
 | OS | File | Notes |
 |---|---|---|
-| **macOS (Apple Silicon)** | `Lantern_*_aarch64.dmg` | ~500 MB — bundles the AI engine |
-| **Windows** | `Lantern_*_x64-setup.exe` | ~1.6 GB — bundles AI engine + GPU libs |
-| **Linux x86_64** | `Lantern_*_amd64.AppImage` | ~1.5 GB — bundles AI engine + GPU libs |
+| **macOS (Apple Silicon)** | `Lantern_*_aarch64.dmg` | Lightweight — the app + local API, no giant AI bundle |
+| **Windows** | `Lantern_*_x64-setup.exe` | `.exe` (NSIS) or `.msi` |
+| **Linux x86_64** | `Lantern_*_amd64.AppImage` | also `.deb` |
+
+> Local models are **not** bundled (that would balloon the download to
+> gigabytes). Cloud providers work immediately with your API key; for offline
+> local models, install [Ollama](https://ollama.com/download) once and Lantern
+> picks it up automatically.
 
 > Lantern is free, open, and **unsigned**, so the OS will warn the first time
 > you run it:
@@ -46,22 +53,23 @@ Grab the installer for your OS from the
 
 1. **Launch Lantern.** On first run you land on a **Welcome** screen with two
    ways to get started — pick whichever you prefer.
-2. **Easiest — run a model locally:** open the **Cookbook**, a list of local AI
-   models sized and ranked for your hardware (RAM, GPU detected automatically).
-   Click **"Install"** on a recommended model — for most people on 8-16 GB RAM
-   that's **Llama 3.2 3B** (2 GB) or **Llama 3.1 8B** (4.9 GB) — then **"Use in
-   chat"**. No accounts, no API keys, no cloud; the model runs on your hardware.
-3. **Or bring an API key:** open **Settings → Add provider**, pick a preset with
-   a free tier (Gemini, Cerebras, Groq…), grab a key from the linked page, paste
-   it, and you're live in seconds.
+2. **Fastest — bring an API key:** open **Settings → Add provider**, pick a
+   preset with a free tier (Gemini, Cerebras, Groq…), grab a key from the linked
+   page, paste it, and you're live in seconds. Nothing to download.
+3. **Or run a model locally (offline, no key):** install
+   [Ollama](https://ollama.com/download) once, then open the **Cookbook** — a
+   list of local AI models sized and ranked for your hardware (RAM, GPU detected
+   automatically). Click **"Install"** on a recommended model — for most people
+   on 8-16 GB RAM that's **Llama 3.2 3B** (2 GB) or **Llama 3.1 8B** (4.9 GB) —
+   then **"Use in chat"**. The model runs entirely on your hardware.
 
 Either way you're then in a fully featured workspace — explore the sidebar.
 
-### Want to use a cloud model too?
+### Mixing local and cloud
 
-Open **Settings → Add provider** to add OpenRouter, Groq, Mistral, Gemini, etc.
-Mix local and cloud freely: switch models per chat from the model picker in
-the header.
+You can configure both and switch per chat from the model picker in the header.
+Add more cloud providers any time under **Settings → Add provider** (OpenRouter,
+Groq, Mistral, Gemini, Cerebras, OpenAI, …).
 
 ## Features
 
@@ -92,7 +100,7 @@ others are productivity tools you'll discover as you use it.
 
 | Provider | Base URL | Free model example |
 |---|---|---|
-| Local (bundled) | `http://127.0.0.1:11434/v1` | whatever you install in Cookbook |
+| Local (Ollama) | `http://127.0.0.1:11434/v1` | whatever you install in Cookbook |
 | OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini` (or any `…:free` id) |
 | Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.5-flash` |
 | Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
@@ -118,23 +126,20 @@ routed a chat to.
   └──────────────────────────────────────────────────────────┘
 ```
 
-The Tauri shell wraps a static export of the Next.js app and spawns two
-sidecars on startup:
+The Tauri shell wraps a static export of the Next.js app and spawns the
+**lantern-api** sidecar on startup:
 
 - **lantern-api** — a PyInstaller-packaged FastAPI server (port 8000) that
   owns the SQLite database, provider routing, RAG, agents, and research.
-- **Ollama** — the upstream Ollama runtime (port 11434). Bundled per-platform
-  by the build CI. Models you install live in
-  `~/Library/Application Support/com.lantern.app/ollama-models/` (macOS) so
-  they don't conflict with a separately-installed Ollama at `~/.ollama`.
-
-If you already have your own Ollama on `:11434`, Lantern detects it on start
-and steps aside — Cookbook then operates against your existing daemon.
+- **Ollama** *(optional, not bundled)* — the upstream Ollama runtime
+  (port 11434). Install it yourself for offline local models; Lantern detects it
+  on `:11434` at start and the Cookbook drives it. It's deliberately left out of
+  the installer (it's ~3.5 GB) so the download stays small and the build fast.
 
 ## Local development
 
-You don't need this if you just want to use the app — the installers above
-include everything. This is for hacking on Lantern itself.
+You don't need this if you just want to use the app — the installer above is
+self-contained (Ollama aside). This is for hacking on Lantern itself.
 
 ### 1. Configure environment
 
@@ -199,10 +204,6 @@ mkdir -p ../desktop/src-tauri/sidecar
 rm -rf ../desktop/src-tauri/sidecar/lantern-api
 cp -R dist/lantern-api ../desktop/src-tauri/sidecar/lantern-api
 
-# Fetch the bundled Ollama
-cd ../desktop
-python scripts/fetch-ollama.py
-
 # Build the web app
 cd ../web && npm run build
 
@@ -212,12 +213,18 @@ cd ../desktop && npm install && npm run tauri build
 
 Output ends up under `apps/desktop/src-tauri/target/release/bundle/`.
 
+> Ollama is **not** bundled — the app talks to a user-installed Ollama on
+> `:11434`. If you want a self-contained build that ships its own Ollama, run
+> `python scripts/fetch-ollama.py` in `apps/desktop` first and re-add
+> `"sidecar/ollama/**/*"` to `bundle.resources` in `tauri.conf.json` before the
+> Tauri build.
+
 ## Tech stack
 
 - **Frontend:** React 19 · Next.js 16 (App Router, static export) · Tailwind CSS · lucide-react
 - **Backend:** Python · FastAPI · SQLite · httpx · OpenAI-compatible provider shim
-- **Desktop shell:** Tauri 2 · two Rust-managed sidecars (FastAPI + Ollama)
-- **Local AI engine:** Ollama (bundled per-platform; pinned to v0.30.6)
+- **Desktop shell:** Tauri 2 · Rust-managed FastAPI sidecar (Ollama optional, user-installed)
+- **Local AI engine:** Ollama (not bundled — install separately for offline models)
 - **AI providers:** any OpenAI-compatible endpoint — local Ollama, OpenRouter,
   Groq, Mistral, Gemini, Cerebras, OpenAI, Anthropic, …
 
@@ -228,8 +235,8 @@ installers for macOS, Windows, and Linux. Push a tag matching `v*` and a
 draft GitHub Release is created with all three installers attached.
 
 ```bash
-git tag v1.0.0
-git push --tags
+git tag v1.0.1
+git push origin v1.0.1
 ```
 
 ## License

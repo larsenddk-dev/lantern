@@ -35,8 +35,7 @@
       "icons/128x128@2x.png"
     ],
     "resources": [
-      "sidecar/lantern-api/**/*",
-      "sidecar/ollama/**/*"
+      "sidecar/lantern-api/**/*"
     ]
   },
   "plugins": {

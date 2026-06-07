@@ -30,19 +30,26 @@ pub fn run() {
                 .app_data_dir()
                 .expect("failed to resolve app_data_dir");
 
-            // 1. Spawn the bundled Ollama unless the user already has one
-            //    listening on :11434. We don't want to fight an existing
-            //    install — if it's there, our Cookbook will just talk to it.
+            // 1. Local models run through Ollama. We do NOT bundle Ollama in
+            //    the installer (it's ~3.5 GB and bloats download/build), so the
+            //    common case is: the user has installed Ollama themselves and
+            //    it's already serving on :11434 — we just talk to it. If a build
+            //    *did* ship an Ollama binary as a resource (opt-in), spawn that.
+            //    Either way this is best-effort: with no Ollama, cloud providers
+            //    still work and Cookbook shows a "Download Ollama" prompt.
             if !is_port_in_use(OLLAMA_PORT) {
                 match spawn_ollama(&resource_dir, &app_data_dir) {
-                    Ok(pid) => {
+                    Ok(Some(pid)) => {
                         let state: State<Sidecars> = app.state();
                         *state.ollama.lock().unwrap() = Some(pid);
                     }
+                    Ok(None) => {
+                        // No bundled Ollama binary present — expected. The user
+                        // installs Ollama separately for local models.
+                        eprintln!("No bundled Ollama; relying on a user-installed one");
+                    }
                     Err(e) => {
-                        // Don't panic — Cookbook surfaces the "Ollama not
-                        // running" state with a helpful message, so an
-                        // unbundled or broken Ollama isn't a hard failure.
+                        // Present but failed to launch — non-fatal.
                         eprintln!("Failed to spawn bundled Ollama: {}", e);
                     }
                 }
@@ -102,13 +109,22 @@ fn spawn_lantern_api(resource_dir: &PathBuf, app_data_dir: &PathBuf) -> std::io:
     Ok(child.id())
 }
 
-fn spawn_ollama(resource_dir: &PathBuf, app_data_dir: &PathBuf) -> std::io::Result<u32> {
+/// Spawn a bundled Ollama if one was shipped as a resource. Returns Ok(None)
+/// when no bundled binary exists (the default — Ollama isn't bundled), so the
+/// caller can distinguish "nothing to start" from "tried and failed".
+fn spawn_ollama(resource_dir: &PathBuf, app_data_dir: &PathBuf) -> std::io::Result<Option<u32>> {
     #[cfg(target_os = "windows")]
     let exe_name = "ollama.exe";
     #[cfg(not(target_os = "windows"))]
     let exe_name = "ollama";
 
     let exe_path = resource_dir.join("sidecar/ollama").join(exe_name);
+
+    // Not bundled in standard builds — bail out quietly so we don't log a
+    // spurious "file not found" on every launch.
+    if !exe_path.exists() {
+        return Ok(None);
+    }
 
     // Store models inside Lantern's app data dir so we don't conflict with
     // any user-managed Ollama install at ~/.ollama, and so uninstalling
@@ -126,7 +142,7 @@ fn spawn_ollama(resource_dir: &PathBuf, app_data_dir: &PathBuf) -> std::io::Resu
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
-    Ok(child.id())
+    Ok(Some(child.id()))
 }
 
 /// Best-effort check that a port is already taken. We use this to decide

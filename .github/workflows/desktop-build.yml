@@ -38,11 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux build deps (Tauri webkit + zstd for Ollama)
+      - name: Install Linux build deps (Tauri webkit)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf zstd
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - uses: actions/setup-node@v4
         with:
@@ -79,15 +79,11 @@ jobs:
             chmod +x ../desktop/src-tauri/sidecar/lantern-api/lantern-api
           fi
 
-      - name: Fetch bundled Ollama (per-OS)
-        working-directory: apps/desktop
-        shell: bash
-        run: |
-          # Downloads the pinned Ollama release for this OS+arch and lays it
-          # out under src-tauri/sidecar/ollama/ so Tauri can bundle it as a
-          # resource. The script reads OLLAMA_VERSION from itself; bumping
-          # the bundled Ollama is a one-line change in fetch-ollama.py.
-          python scripts/fetch-ollama.py
+      # NOTE: Ollama is intentionally NOT bundled — it's ~3.5 GB and made the
+      # installer huge and the build slow/disk-bound. Users install Ollama
+      # themselves for local models (the app links them to the download); cloud
+      # providers work out of the box. apps/desktop/scripts/fetch-ollama.py is
+      # kept for anyone who wants to build a self-contained variant locally.
 
       - name: Install desktop deps
         working-directory: apps/desktop
