@@ -52,7 +52,7 @@ pub fn run() {
 
             // 2. Spawn the FastAPI sidecar. Without this the UI has no
             //    backend, so a failure here is fatal.
-            let api_pid = spawn_lantern_api(&resource_dir).unwrap_or_else(|e| {
+            let api_pid = spawn_lantern_api(&resource_dir, &app_data_dir).unwrap_or_else(|e| {
                 panic!("Failed to spawn lantern-api sidecar: {}", e)
             });
             let state: State<Sidecars> = app.state();
@@ -77,14 +77,24 @@ pub fn run() {
         });
 }
 
-fn spawn_lantern_api(resource_dir: &PathBuf) -> std::io::Result<u32> {
+fn spawn_lantern_api(resource_dir: &PathBuf, app_data_dir: &PathBuf) -> std::io::Result<u32> {
     #[cfg(target_os = "windows")]
     let exe_name = "lantern-api.exe";
     #[cfg(not(target_os = "windows"))]
     let exe_name = "lantern-api";
 
     let exe_path = resource_dir.join("sidecar/lantern-api").join(exe_name);
+
+    // Keep the user's database OUTSIDE the bundled resources. The sidecar binary
+    // and its _internal/ dir get overwritten on every install/update, so a DB
+    // stored next to it would be wiped. Point LANTERN_DB_PATH at the stable
+    // per-user app data dir instead (uploads land next to it automatically).
+    let db_dir = app_data_dir.join("data");
+    std::fs::create_dir_all(&db_dir).ok();
+    let db_path = db_dir.join("lantern.db");
+
     let child = Command::new(&exe_path)
+        .env("LANTERN_DB_PATH", &db_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
