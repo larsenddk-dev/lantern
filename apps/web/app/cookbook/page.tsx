@@ -61,11 +61,47 @@ interface PullState {
   status: string;
   completed: number;
   total: number;
+  // Sample of (timestamp, bytes) used to compute a smoothed speed without
+  // flicker. We keep the last ~5 samples so a momentary lull doesn't drop
+  // the displayed MB/s to zero.
+  samples: { t: number; b: number }[];
+}
+
+function formatMbps(bytesPerSec: number): string {
+  if (bytesPerSec < 100 * 1024) return `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
+  return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+}
+
+function formatEta(seconds: number): string {
+  if (!isFinite(seconds) || seconds <= 0) return "—";
+  if (seconds < 60) return `${Math.round(seconds)}s left`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  if (m < 60) return `${m}m ${s}s left`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m left`;
 }
 
 function PullProgress({ state, modelId }: { state: PullState; modelId: string }) {
   const pct =
     state.total > 0 ? Math.min(100, (state.completed / state.total) * 100) : 0;
+
+  // Speed from the oldest vs newest sample in the window — smooths short
+  // hiccups without going stale during a long lull.
+  let speed = 0;
+  let eta = Infinity;
+  if (state.samples.length >= 2) {
+    const first = state.samples[0];
+    const last = state.samples[state.samples.length - 1];
+    const dt = (last.t - first.t) / 1000;
+    const db = last.b - first.b;
+    if (dt > 0 && db > 0) {
+      speed = db / dt;
+      const remaining = Math.max(0, state.total - state.completed);
+      eta = remaining / speed;
+    }
+  }
+
   return (
     <div className="flex flex-col gap-1 mt-2">
       <div
@@ -77,10 +113,24 @@ function PullProgress({ state, modelId }: { state: PullState; modelId: string })
           style={{ width: `${pct}%`, background: "var(--primary)" }}
         />
       </div>
-      <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>
-        {state.status}
-        {state.total > 0 && ` · ${formatBytes(state.completed)} / ${formatBytes(state.total)}`}
-        {modelId && state.completed === 0 && " · starting…"}
+      <p className="text-[11px] flex items-center gap-1.5 flex-wrap"
+         style={{ color: "var(--muted-foreground)" }}>
+        <span>{state.status}</span>
+        {state.total > 0 && (
+          <>
+            <span>·</span>
+            <span>{formatBytes(state.completed)} / {formatBytes(state.total)}</span>
+          </>
+        )}
+        {speed > 0 && (
+          <>
+            <span>·</span>
+            <span>{formatMbps(speed)}</span>
+            <span>·</span>
+            <span>{formatEta(eta)}</span>
+          </>
+        )}
+        {modelId && state.completed === 0 && <span>· starting…</span>}
       </p>
     </div>
   );
@@ -245,6 +295,7 @@ export default function CookbookPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
   }, [refresh]);
 
@@ -254,6 +305,7 @@ export default function CookbookPage() {
   // spurious "Install Ollama" panel on a perfectly healthy app.
   useEffect(() => {
     if (loading || status?.running) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWaitingForOllama(false);
       return;
     }
@@ -297,7 +349,10 @@ export default function CookbookPage() {
 
   async function handleInstall(modelId: string) {
     if (pulls[modelId]) return;
-    setPulls((prev) => ({ ...prev, [modelId]: { status: "starting", completed: 0, total: 0 } }));
+    setPulls((prev) => ({
+      ...prev,
+      [modelId]: { status: "starting", completed: 0, total: 0, samples: [] },
+    }));
     const controller = new AbortController();
     abortsRef.current[modelId] = controller;
     try {
@@ -309,14 +364,24 @@ export default function CookbookPage() {
             toast(`Install failed: ${ev.error}`);
             return;
           }
-          setPulls((prev) => ({
-            ...prev,
-            [modelId]: {
-              status: ev.status,
-              completed: ev.completed ?? prev[modelId]?.completed ?? 0,
-              total: ev.total ?? prev[modelId]?.total ?? 0,
-            },
-          }));
+          setPulls((prev) => {
+            const prior = prev[modelId];
+            const now = Date.now();
+            const completed = ev.completed ?? prior?.completed ?? 0;
+            const total = ev.total ?? prior?.total ?? 0;
+            // Keep up to 5 samples covering the last ~10s for the MB/s
+            // estimate. Sample once per second to avoid render-cost churn.
+            const samples = prior?.samples ?? [];
+            const last = samples[samples.length - 1];
+            const newSamples =
+              !last || now - last.t >= 1000
+                ? [...samples, { t: now, b: completed }].slice(-5)
+                : samples;
+            return {
+              ...prev,
+              [modelId]: { status: ev.status, completed, total, samples: newSamples },
+            };
+          });
         },
         controller.signal,
       );

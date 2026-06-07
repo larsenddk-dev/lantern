@@ -100,7 +100,7 @@ export function NavSidebar() {
           <kbd className="font-sans">⌘K</kbd> commands · <kbd className="font-sans">?</kbd> shortcuts
         </p>
         <p className="text-xs px-2" style={{ color: "var(--muted-foreground)" }}>
-          Lantern v0.1
+          Lantern v{process.env.NEXT_PUBLIC_LANTERN_VERSION || "1.0.0"}
         </p>
       </div>
     </nav>

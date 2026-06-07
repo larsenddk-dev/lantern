@@ -55,15 +55,19 @@ export default function DocumentsPage() {
     }
   }, []);
 
+  // Initial list load — standard async-fetch-on-mount shape.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
   // Deep-link: open a specific document when arriving via search (?focus=<id>).
+  // openDocument intentionally fires once on mount with the URL param.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const focus = new URLSearchParams(window.location.search).get("focus");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (focus) openDocument(focus);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleFiles(files: FileList | null) {

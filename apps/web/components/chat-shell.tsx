@@ -395,6 +395,9 @@ export function ChatShell() {
   // Uses window.location to avoid the static-export useSearchParams/Suspense gotcha.
   useEffect(() => {
     const focus = new URLSearchParams(window.location.search).get("focus");
+    // URL-driven side effect on mount is exactly what we want here, even
+    // though it kicks off setState in the callback.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (focus) loadSession(focus);
   }, [loadSession]);
 
