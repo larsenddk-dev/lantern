@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw, Pause, Play, ListChecks, X, PanelRight, KeyRound, ArrowRight, Paperclip } from "lucide-react";
+import { Send, Plus, MessageSquare, Loader2, Square, Brain, Download, Copy, Check, Pencil, Trash2, Star, RefreshCw, Pause, Play, ListChecks, X, PanelRight, KeyRound, ArrowRight, Paperclip, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
-import type { Session, Message, Provider } from "@/lib/types";
+import type { Session, Message, Provider, Prompt } from "@/lib/types";
 import { ProviderSwitcher } from "@/components/provider-switcher";
 import { Markdown } from "@/components/markdown";
 import { CanvasPanel } from "@/components/canvas-panel";
@@ -433,6 +433,8 @@ export function ChatShell() {
   const [useContext, setUseContext] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [generatingTasks, setGeneratingTasks] = useState(false);
+  // Saved Prompts available to pin as a per-session system prompt.
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
   // Canvas / Artifacts — the artifact currently open in the side panel, and
   // whether an AI revision of it is streaming.
   const [canvas, setCanvas] = useState<Artifact | null>(null);
@@ -521,6 +523,17 @@ export function ChatShell() {
       });
   }, []);
 
+  // Load the saved Prompt library — used for the per-session system-prompt
+  // picker in the header. Cheap (small JSON list), once per mount.
+  useEffect(() => {
+    api
+      .listPrompts()
+      .then(setPrompts)
+      .catch(() => {
+        /* prompts are optional — silent fail */
+      });
+  }, []);
+
   // Check whether any provider is configured, so the empty state can guide a
   // brand-new user to set one up instead of inviting a message that'll error.
   useEffect(() => {
@@ -540,6 +553,11 @@ export function ChatShell() {
       ]);
       const starredIds = new Set(starred.map((m) => m.id));
       setActiveSessionId(id);
+      // Merge the fresh detail (system_prompt_id can have changed in another
+      // tab) into the sidebar list so the header's prompt pill stays in sync.
+      setSessions((prev) => prev.map((s) =>
+        s.id === id ? { ...s, system_prompt_id: detail.system_prompt_id ?? null } : s,
+      ));
       setMessages(
         detail.messages.map((m: Message) => ({
           id: m.id,
@@ -801,6 +819,21 @@ export function ChatShell() {
       toast("Failed to delete message");
     }
   }, [messages]);
+
+  const handlePinPrompt = useCallback(async (sessionId: string, promptId: string | null) => {
+    // Optimistic pill update; revert on failure.
+    setSessions((prev) => prev.map((s) =>
+      s.id === sessionId ? { ...s, system_prompt_id: promptId } : s,
+    ));
+    try {
+      await api.setSessionPrompt(sessionId, promptId);
+    } catch {
+      setSessions((prev) => prev.map((s) =>
+        s.id === sessionId ? { ...s, system_prompt_id: s.system_prompt_id } : s,
+      ));
+      toast("Couldn't update the chat's prompt");
+    }
+  }, []);
 
   const handleGenerateTasks = useCallback(async () => {
     if (!activeSessionId || generatingTasks) return;
@@ -1068,6 +1101,49 @@ export function ChatShell() {
                 "Chat")
               : "Chat"}
           </span>
+          {/* Per-session system-prompt picker. Only shows once there's a
+              session and the user has at least one saved Prompt — otherwise
+              the pill would be empty + useless. */}
+          {activeSessionId && prompts.length > 0 && (() => {
+            const sess = sessions.find((s) => s.id === activeSessionId);
+            const pinnedId = sess?.system_prompt_id ?? "";
+            const pinnedTitle =
+              prompts.find((p) => p.id === pinnedId)?.title ?? "";
+            return (
+              <div
+                className="relative flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors shrink-0"
+                style={{
+                  background: pinnedId ? "var(--muted)" : "transparent",
+                  color: pinnedId ? "var(--foreground)" : "var(--muted-foreground)",
+                  border: "1px solid var(--border)",
+                  maxWidth: 220,
+                }}
+                title={pinnedId
+                  ? `System prompt: ${pinnedTitle}`
+                  : "Pin a saved Prompt as this chat's system prompt"}
+              >
+                <Sparkles size={13} aria-hidden="true" />
+                <span className="truncate">
+                  {pinnedId ? pinnedTitle : "Prompt"}
+                </span>
+                {/* Invisible select overlays the pill — clicking the pill
+                    opens the native dropdown. */}
+                <select
+                  value={pinnedId}
+                  onChange={(e) =>
+                    handlePinPrompt(activeSessionId, e.target.value || null)
+                  }
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                  aria-label="Pin a Prompt as system prompt for this chat"
+                >
+                  <option value="">No prompt</option>
+                  {prompts.map((p) => (
+                    <option key={p.id} value={p.id}>{p.title || "(untitled)"}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })()}
           {messages.length > 0 && activeSessionId && (
             <button
               type="button"

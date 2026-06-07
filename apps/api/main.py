@@ -88,6 +88,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL DEFAULT 'New conversation',
+                system_prompt_id TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -189,6 +190,17 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);
             """
         )
+        # Migrations for users upgrading from older DBs that didn't have these
+        # columns. ADD COLUMN can't be idempotent in sqlite, so we try-and-skip
+        # by checking the error message.
+        for stmt in (
+            "ALTER TABLE sessions ADD COLUMN system_prompt_id TEXT",
+        ):
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
 
 
 def _now_iso() -> str:
@@ -481,6 +493,28 @@ def db_rename_session(session_id: str, title: str) -> Optional[dict]:
         conn.execute(
             "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
             (title, now, session_id),
+        )
+        row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return dict(row)
+
+
+def db_set_session_prompt(session_id: str, prompt_id: Optional[str]) -> Optional[dict]:
+    """Pin (or unpin with prompt_id=None) a saved Prompt as the system prompt
+    for a chat session. The linked Prompt's content is injected as the first
+    system message on every /chat turn until cleared."""
+    now = _now_iso()
+    with _get_conn() as conn:
+        exists = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if exists is None:
+            return None
+        if prompt_id is not None:
+            # Defensive: don't let the caller pin a prompt that doesn't exist.
+            p = conn.execute("SELECT 1 FROM prompts WHERE id = ?", (prompt_id,)).fetchone()
+            if p is None:
+                return None
+        conn.execute(
+            "UPDATE sessions SET system_prompt_id = ?, updated_at = ? WHERE id = ?",
+            (prompt_id, now, session_id),
         )
         row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
     return dict(row)
@@ -2053,6 +2087,11 @@ class RenameSessionRequest(BaseModel):
     title: str
 
 
+class SetSessionPromptRequest(BaseModel):
+    # null clears the pin; a non-null id pins that Prompt as the system prompt.
+    prompt_id: Optional[str] = None
+
+
 class ChatAttachment(BaseModel):
     """One image (and later: file/voice) attached to the next user message.
     Bytes are sent inline base64 — sized to ~10 MB max per attachment in
@@ -2203,6 +2242,16 @@ def rename_session(session_id: str, body: RenameSessionRequest):
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@app.put("/sessions/{session_id}/prompt")
+def set_session_prompt(session_id: str, body: SetSessionPromptRequest):
+    """Pin (or clear with prompt_id=null) a saved Prompt as the chat's
+    system prompt. Returns the updated session row."""
+    result = db_set_session_prompt(session_id, body.prompt_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Session or prompt not found")
+    return result
 
 
 @app.delete("/sessions/{session_id}")
@@ -2905,6 +2954,15 @@ async def chat(body: ChatRequest):
                 + "\n".join(f"- {line}" for line in context_lines)
             )
             history.insert(0, {"role": "system", "content": context})
+
+    # Session-pinned system prompt — comes from the user's saved Prompt library.
+    # Sits at the very top so it sets the persona/mode for the whole chat,
+    # ahead of the auto-RAG context block.
+    sp_id = session.get("system_prompt_id")
+    if sp_id:
+        sp = db_get_prompt(sp_id)
+        if sp and sp.get("content", "").strip():
+            history.insert(0, {"role": "system", "content": sp["content"]})
 
     # The brand-new user turn (with any attachments just saved above).
     new_turn = _llm_content_for({

@@ -111,6 +111,17 @@ export const api = {
     });
   },
 
+  /** Pin (or clear, with promptId=null) a saved Prompt as the chat's
+   * system prompt. The prompt content is injected by the backend on every
+   * subsequent /chat turn. */
+  setSessionPrompt(id: string, promptId: string | null): Promise<Session> {
+    return request(`/sessions/${id}/prompt`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt_id: promptId }),
+    });
+  },
+
   deleteSession(id: string): Promise<{ ok: boolean }> {
     return request(`/sessions/${id}`, { method: "DELETE" });
   },

@@ -1562,6 +1562,96 @@ def test_replay_includes_past_image_in_history(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Tests — Per-session system prompt (Prompts × Chat)
+# ---------------------------------------------------------------------------
+
+
+def test_session_prompt_pin_and_clear():
+    p = client.post("/prompts", json={
+        "title": "Pirate", "content": "Speak only like a pirate.",
+    }).json()
+    s = client.post("/sessions", json={"title": "chat"}).json()
+
+    # Pin
+    pinned = client.put(f"/sessions/{s['id']}/prompt",
+                        json={"prompt_id": p["id"]}).json()
+    assert pinned["system_prompt_id"] == p["id"]
+    detail = client.get(f"/sessions/{s['id']}").json()
+    assert detail["system_prompt_id"] == p["id"]
+
+    # Clear
+    cleared = client.put(f"/sessions/{s['id']}/prompt",
+                         json={"prompt_id": None}).json()
+    assert cleared["system_prompt_id"] is None
+
+    client.delete(f"/prompts/{p['id']}")
+    client.delete(f"/sessions/{s['id']}")
+
+
+def test_session_prompt_404_for_unknown():
+    s = client.post("/sessions", json={"title": "x"}).json()
+    # Unknown prompt id → 404 (and the session stays untouched)
+    r = client.put(f"/sessions/{s['id']}/prompt", json={"prompt_id": "nope"})
+    assert r.status_code == 404
+    # Unknown session id → 404
+    r = client.put("/sessions/nope/prompt", json={"prompt_id": None})
+    assert r.status_code == 404
+    client.delete(f"/sessions/{s['id']}")
+
+
+def test_chat_injects_pinned_prompt_as_first_system(monkeypatch):
+    """A session with a pinned Prompt must inject the prompt's content as the
+    *first* system message on every chat turn, before any RAG context."""
+    p = client.post("/prompts", json={
+        "title": "Tutor", "content": "You are a patient maths tutor.",
+    }).json()
+    s = client.post("/sessions", json={"title": "math"}).json()
+    client.put(f"/sessions/{s['id']}/prompt", json={"prompt_id": p["id"]})
+
+    captured: dict = {}
+
+    async def _fake(messages, **kwargs):
+        captured["messages"] = messages
+        yield "sure"
+
+    monkeypatch.setattr(main, "stream_chat_completion", _fake)
+    with client.stream("POST", "/chat", json={
+        "session_id": s["id"], "message": "2+2?", "use_context": False,
+    }) as resp:
+        b"".join(resp.iter_bytes())
+
+    msgs = captured["messages"]
+    assert msgs[0]["role"] == "system"
+    assert "patient maths tutor" in msgs[0]["content"]
+    # And the user turn is still there
+    assert msgs[-1] == {"role": "user", "content": "2+2?"}
+
+    client.delete(f"/prompts/{p['id']}")
+    client.delete(f"/sessions/{s['id']}")
+
+
+def test_chat_without_pinned_prompt_unchanged(monkeypatch):
+    """No pin → no extra system message at the top."""
+    s = client.post("/sessions", json={"title": "plain"}).json()
+
+    captured: dict = {}
+
+    async def _fake(messages, **kwargs):
+        captured["messages"] = messages
+        yield "k"
+
+    monkeypatch.setattr(main, "stream_chat_completion", _fake)
+    with client.stream("POST", "/chat", json={
+        "session_id": s["id"], "message": "hi", "use_context": False,
+    }) as resp:
+        b"".join(resp.iter_bytes())
+
+    # Only the user turn — no leading system message.
+    assert captured["messages"] == [{"role": "user", "content": "hi"}]
+    client.delete(f"/sessions/{s['id']}")
+
+
+# ---------------------------------------------------------------------------
 # Tests — Stats + export
 # ---------------------------------------------------------------------------
 

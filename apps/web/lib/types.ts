@@ -29,6 +29,9 @@ export interface ChatAttachmentInput {
 export interface Session {
   id: string;
   title: string;
+  /** Optional reference to a saved Prompt (from /prompts). When set, that
+   * prompt's content is injected as the system message on every chat turn. */
+  system_prompt_id?: string | null;
   created_at: string;
   updated_at: string;
 }
