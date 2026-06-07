@@ -591,6 +591,39 @@ def web_search(query: str, max_results: int = 5) -> dict:
         return {"configured": True, "results": [], "error": str(e)[:200]}
 
 
+class ProviderError(Exception):
+    """A non-2xx response from the upstream model provider, with a body we can
+    turn into a clear, user-facing message instead of a dead stream."""
+
+    def __init__(self, status: int, body: str):
+        self.status = status
+        self.body = body or ""
+        super().__init__(f"provider returned HTTP {status}")
+
+    def user_message(self) -> str:
+        detail = ""
+        try:
+            j = json.loads(self.body)
+            if isinstance(j, list) and j:
+                j = j[0]
+            if isinstance(j, dict):
+                err = j.get("error")
+                if isinstance(err, dict):
+                    detail = err.get("message", "")
+                detail = detail or j.get("message", "")
+        except Exception:
+            detail = ""
+        detail = (detail or self.body).strip().replace("\n", " ")[:200]
+        s = self.status
+        if s in (401, 403):
+            return f"Authentication failed (HTTP {s}) — check this provider's API key in Settings. {detail}".strip()
+        if s == 404:
+            return f"Model not found (HTTP 404) — pick an available model in Settings. {detail}".strip()
+        if s == 429:
+            return f"Rate limit or quota exceeded (HTTP 429) — wait a moment or switch provider. {detail}".strip()
+        return f"Provider error (HTTP {s}). {detail}".strip()
+
+
 async def stream_chat_completion(
     messages: list[dict],
     *,
@@ -598,11 +631,18 @@ async def stream_chat_completion(
     api_key: str = LANTERN_OPENAI_API_KEY,
     model: str = LANTERN_MODEL,
 ) -> AsyncIterator[str]:
-    """Yield text deltas from an OpenAI-compatible streaming chat endpoint."""
+    """Yield text deltas from an OpenAI-compatible streaming chat endpoint.
+
+    Raises ProviderError on a non-2xx response so the caller can surface a
+    clear message; lets httpx transport errors propagate for retry handling.
+    """
     url = base_url.rstrip("/") + "/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        # Some providers front their API with a WAF (Cloudflare) that 1010-blocks
+        # default client User-Agents; a named UA gets through reliably.
+        "User-Agent": "Lantern/1.0",
     }
     payload = {
         "model": model,
@@ -611,7 +651,9 @@ async def stream_chat_completion(
     }
     async with httpx.AsyncClient(timeout=120) as client:
         async with client.stream("POST", url, headers=headers, json=payload) as resp:
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                raise ProviderError(resp.status_code, body.decode(errors="replace"))
             async for line in resp.aiter_lines():
                 line = line.strip()
                 if not line or not line.startswith("data: "):
@@ -2619,18 +2661,42 @@ async def chat(body: ChatRequest):
 
     async def generate():
         collected: list[str] = []
-        async for delta in stream_chat_completion(
-            history,
-            base_url=resolved_base_url,
-            api_key=resolved_api_key,
-            model=resolved_model,
-        ):
-            collected.append(delta)
-            # SSE format: "data: <json>\n\n"
-            yield f"data: {json.dumps({'delta': delta})}\n\n"
+        error_msg: Optional[str] = None
+        # Up to two attempts: a transient connection drop that happens before any
+        # token streamed is silently retried once. A provider error (4xx) or a
+        # drop mid-stream is not retried — we surface it / keep the partial.
+        for attempt in range(2):
+            try:
+                async for delta in stream_chat_completion(
+                    history,
+                    base_url=resolved_base_url,
+                    api_key=resolved_api_key,
+                    model=resolved_model,
+                ):
+                    collected.append(delta)
+                    # SSE format: "data: <json>\n\n"
+                    yield f"data: {json.dumps({'delta': delta})}\n\n"
+                error_msg = None
+                break
+            except ProviderError as e:
+                error_msg = e.user_message()
+                break  # provider rejected the request; retrying won't help
+            except (httpx.HTTPError, Exception) as e:  # noqa: BLE001
+                error_msg = (
+                    "The connection to the model provider was interrupted. "
+                    "Please try again."
+                )
+                # Only retry if nothing has streamed yet (a clean restart);
+                # retrying mid-stream would duplicate text.
+                if collected or attempt == 1:
+                    break
+
         full_reply = "".join(collected)
         if full_reply:
             db_append_message(body.session_id, "assistant", full_reply)
+        if error_msg:
+            # Surface the failure to the client instead of a dead stream.
+            yield f"data: {json.dumps({'error': error_msg})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(

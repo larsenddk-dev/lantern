@@ -155,12 +155,17 @@ export const api = {
           onDelta(null);
           return;
         }
+        let parsed: { delta?: string; error?: string };
         try {
-          const parsed = JSON.parse(data) as { delta?: string };
-          if (parsed.delta) onDelta(parsed.delta);
+          parsed = JSON.parse(data) as { delta?: string; error?: string };
         } catch {
-          // malformed line — skip
+          continue; // malformed line — skip
         }
+        // The backend surfaces a provider/connection failure as an error event
+        // instead of a silently truncated stream. Turn it into a thrown error
+        // so the caller shows it (rather than a cryptic "network error").
+        if (parsed.error) throw new Error(parsed.error);
+        if (parsed.delta) onDelta(parsed.delta);
       }
     }
     onDelta(null);
