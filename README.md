@@ -226,7 +226,8 @@ git push --tags
 
 ## License
 
-[MIT](./LICENSE) — use it, fork it, ship it. No warranty.
+[PolyForm Strict License 1.0.0](./LICENSE) — you may download and run Lantern,
+but not modify, redistribute, or sell it. No warranty.
 
 ## Workflow
 

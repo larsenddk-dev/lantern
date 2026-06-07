@@ -54,7 +54,8 @@
   - Settings / providers
 - [ ] **Add the screenshots** under `docs/screenshots/` and reference them
   from `README.md`.
-- [ ] **Choose a license** (MIT recommended; `LICENSE` file at repo root).
+- [x] **Choose a license** — PolyForm Strict License 1.0.0 (source-available,
+  use-only: no modifying, redistributing, or selling). `LICENSE` at repo root.
 - [ ] **Tag v1.0.0** — `git tag v1.0.0 && git push --tags`. CI builds and
   attaches installers to a draft GitHub Release. Publish manually after a
   smoke test of the downloaded installer.
@@ -109,7 +110,7 @@ cd apps/web && npm run build              # clean
 
 # 4. Update README to reference screenshots under docs/screenshots/
 
-# 5. Choose license — add LICENSE file at repo root
+# 5. License — done: PolyForm Strict License 1.0.0 (LICENSE at repo root)
 
 # 6. Tag and push — CI builds & uploads
 git tag v1.0.0
