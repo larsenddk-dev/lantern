@@ -8,19 +8,25 @@ import { api } from "@/lib/api";
 /**
  * Startup gate for the desktop app.
  *
- * On launch the bundled Python sidecar takes a few seconds to come up
- * (PyInstaller --onefile cold start). Until /health responds we show a small
- * splash instead of letting every page fire failing requests.
+ * On launch the Tauri shell spawns two sidecars (lantern-api + Ollama).
+ * Normal launches: backend reachable in <2s — splash never appears thanks
+ * to the 500ms grace.
+ * First launch on macOS: Gatekeeper has to scan and verify every file in
+ * the unsigned bundle (~500 MB with Ollama). That can take 30-60s and
+ * isn't a Lantern bug; we just have to wait it out. At 15s in we surface
+ * a reassuring "first launch is slow" note so the user doesn't think the
+ * app froze.
  *
- * Safety: falls through to the app after MAX_ATTEMPTS so it can never hang
- * (e.g. in the browser with no backend). A 500ms grace avoids a flash when the
- * backend is already up (normal web use).
+ * Safety: falls through to the app after MAX_ATTEMPTS so it never hangs
+ * (e.g. running in a plain browser with no backend at all).
  */
-const MAX_ATTEMPTS = 30; // ~30s
+const MAX_ATTEMPTS = 90; // ~90s — first launch on macOS Gatekeeper can be 60s+
+const SLOW_HINT_AFTER = 15; // seconds before we show the "first launch" note
 
 export function StartupGate({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
+  const [showSlowHint, setShowSlowHint] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,9 +52,14 @@ export function StartupGate({ children }: { children: React.ReactNode }) {
       if (!cancelled) setShowSplash(true);
     }, 500);
 
+    const slow = setTimeout(() => {
+      if (!cancelled) setShowSlowHint(true);
+    }, SLOW_HINT_AFTER * 1000);
+
     return () => {
       cancelled = true;
       clearTimeout(grace);
+      clearTimeout(slow);
     };
   }, []);
 
@@ -57,7 +68,7 @@ export function StartupGate({ children }: { children: React.ReactNode }) {
 
   return (
     <div
-      className="h-full w-full flex flex-col items-center justify-center gap-4"
+      className="h-full w-full flex flex-col items-center justify-center gap-4 px-6"
       style={{ background: "var(--background)", color: "var(--foreground)" }}
     >
       <Image
@@ -72,8 +83,16 @@ export function StartupGate({ children }: { children: React.ReactNode }) {
         <Loader2 size={15} className="animate-spin" aria-hidden="true" />
         Starting Lantern…
       </div>
-      <p className="text-xs max-w-xs text-center" style={{ color: "var(--muted-foreground)" }}>
-        Warming up the local engine. First launch takes a few seconds.
+      <p
+        className="text-xs max-w-xs text-center transition-opacity duration-500"
+        style={{
+          color: "var(--muted-foreground)",
+          opacity: showSlowHint ? 1 : 0.7,
+        }}
+      >
+        {showSlowHint
+          ? "First launch can take 30-60 seconds while your OS verifies the app. Subsequent launches are instant."
+          : "Warming up the local engine."}
       </p>
     </div>
   );
