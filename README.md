@@ -32,7 +32,7 @@ Grab the installer for your OS from the
 | OS | File | Notes |
 |---|---|---|
 | **macOS (Apple Silicon)** | `Lantern_*_aarch64.dmg` | Lightweight — the app + local API, no giant AI bundle |
-| **Windows** | `Lantern_*_x64-setup.exe` | `.exe` (NSIS) or `.msi` |
+| **Windows** | `Lantern_*_x64-setup.exe` | Branded NSIS installer, installs per-user (no admin prompt) |
 | **Linux x86_64** | `Lantern_*_amd64.AppImage` | also `.deb` |
 
 > Local models are **not** bundled (that would balloon the download to

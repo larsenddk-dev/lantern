@@ -26,7 +26,18 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "app",
+      "dmg",
+      "nsis",
+      "appimage",
+      "deb"
+    ],
+    "publisher": "Lantern",
+    "copyright": "© 2026 Lantern — PolyForm Strict License 1.0.0",
+    "category": "Productivity",
+    "shortDescription": "Your own local-first AI workspace.",
+    "longDescription": "Lantern is a local-first personal AI workspace — chat, agents, deep research, documents, notes, tasks and memory — running on your own hardware with your provider API keys or local models. Carry your own light.",
     "icon": [
       "icons/icon.icns",
       "icons/icon.ico",
@@ -36,7 +47,17 @@
     ],
     "resources": [
       "sidecar/lantern-api/**/*"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp",
+        "installMode": "currentUser",
+        "compression": "lzma"
+      }
+    },
+    "licenseFile": "installer/LICENSE.txt"
   },
   "plugins": {
     "shell": {
