@@ -180,9 +180,12 @@ fn kill_pid(pid: u32) {
 
 #[cfg(windows)]
 fn kill_pid(pid: u32) {
-    let _ = Command::new("taskkill")
-        .args(["/PID", &pid.to_string(), "/T", "/F"])
+    // Without CREATE_NO_WINDOW, taskkill briefly flashes a console window on
+    // exit — visible to the user as a black flicker when they close Lantern.
+    // Reuse the same hide_console helper the spawn paths use.
+    let mut cmd = Command::new("taskkill");
+    cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+        .stderr(Stdio::null());
+    let _ = hide_console(&mut cmd).status();
 }
